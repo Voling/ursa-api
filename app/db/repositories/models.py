@@ -38,17 +38,15 @@ class ModelRepository:
                 # Deserialize the model to detect its type
                 model_obj = pickle.loads(model_data)
                 
-                # Use ursa-kit to detect model type
-                client = ursakit.client()
-                model_info = client.detect_model_type(model_obj)
+                # Use ursa-kit detector registry directly
+                from ursakit.core.detector_registry import detector_registry
+                detector = detector_registry.detect_model(model_obj)
                 
-                if model_info.get("is_model", False):
+                if detector:
                     if not detected_framework:
-                        metadata = model_info.get("metadata", {})
-                        detected_framework = metadata.get("framework", "unknown")
+                        detected_framework = detector.framework
                     if not detected_model_type:
-                        metadata = model_info.get("metadata", {})
-                        detected_model_type = metadata.get("model_class", "unknown")
+                        detected_model_type = detector.model_type
             except Exception as e:
                 print(f"Warning: Could not detect model type: {e}")
                 if not detected_framework:
@@ -68,7 +66,7 @@ class ModelRepository:
         self.db.add(model)
         self.db.flush()  # Generate ID without committing
         
-        # Save model to storage  
+        # Save model to storage
         # Note: Storage operations should be made async in the future
         import asyncio
         storage_path = asyncio.run(self.storage.save_model(model_data, model.id))

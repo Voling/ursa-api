@@ -8,11 +8,6 @@ import json
 
 router = APIRouter()
 
-# Simulate a database with dictionaries
-metrics_db: Dict[str, Dict] = {}
-node_metrics_db: Dict[str, Dict] = {}
-graph_metrics_db: Dict[str, Dict[str, Dict]] = {}
-
 @router.post("/metrics/", response_model=MetricsResponse)
 def log_metrics(metrics_data: MetricsUpload, db: Session = Depends(get_db)):
     """

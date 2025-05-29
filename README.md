@@ -5,32 +5,22 @@ FastAPI implementation of the Ursa API for machine learning model management and
 ## Overview
 
 The Ursa API provides endpoints for:
-- Model management (save/load)
+- Model management (save/load) with ursakit integration
 - Metrics tracking
 - Node operations in the knowledge graph
 - Project management
 - Graph management
 
-## Features
-
-- **PostgreSQL Database** for storing metadata, relationships, and metrics
-- **Flexible Model Storage**:
-  - Local filesystem storage (default)
-  - S3 cloud storage
-  - Configurable via environment variables
-- **RESTful API** with proper resource hierarchy
-- **Automatic Database Setup** - creates database and tables if they don't exist
-
 ## Installation
 
-1. Clone the repository
-2. Install dependencies:
+1. Clone repository
+2. Install dependencies
    ```
    pip install -r requirements.txt
    ```
 3. Set up PostgreSQL:
    - Make sure PostgreSQL is installed and running
-   - Create `.env` file with your configuration (see `.env.sample`)
+   - Create `.env` file with your configuration
    - The application will create the database and tables automatically
 
 ## Configuration
@@ -70,6 +60,22 @@ API documentation is available at:
 - http://localhost:6422/docs (Swagger UI)
 - http://localhost:6422/redoc (ReDoc)
 
+## Testing
+
+Run the test suite:
+
+```
+python -m pytest tests/ -v
+```
+
+Tests cover:
+- API endpoints functionality
+- Database integration
+- Model caching service
+- ursakit integration
+- PostgreSQL operations
+- Error handling
+
 ## Database Management
 
 - **Automatic Initialization**: The database and tables are created automatically on startup
@@ -89,7 +95,7 @@ The API implements the following endpoints:
 ### Metrics
 - `POST /metrics/` - Log metrics
 - `GET /projects/{project_id}/graphs/{graph_id}/nodes/{node_id}/metrics` - Get node metrics
-- `GET /projects/{project_id}/graph/{graph_id}/metrics` - Get all node metrics in a graph
+- `GET /projects/{project_id}/graphs/{graph_id}/metrics` - Get all node metrics in a graph
 
 ### Nodes
 - `DELETE /projects/{project_id}/graphs/{graph_id}/nodes/{node_id}` - Delete a node

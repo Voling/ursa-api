@@ -31,11 +31,8 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
-
-# Create global settings object
 settings = Settings()
 
-# Function to get database components - used for database initialization
 def get_db_components():
     """Parse database URL into components."""
     db_url = str(settings.DATABASE_URL)
