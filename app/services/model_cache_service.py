@@ -21,18 +21,14 @@ from app.config import settings
 
 
 class ModelCacheService:
-    """
-    Intelligent model caching service.
-    
-    Strategy:
-    - S3: Source of truth, long-term storage, sharing between instances
-    - Local cache: Fast access, cost optimization, performance
-    - SDK: Always works with local files
-    """
+    """Service for managing model caching."""
     
     def __init__(self):
         self.cache_dir = Path(settings.MODEL_STORAGE_DIR) / "cache"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create models subdirectory
+        (self.cache_dir / "models").mkdir(parents=True, exist_ok=True)
         
         # S3 client (only if using S3 storage)
         self.s3_client = None
@@ -47,6 +43,7 @@ class ModelCacheService:
         # Cache metadata
         self.cache_metadata_file = self.cache_dir / "cache_metadata.json"
         self.cache_metadata = self._load_cache_metadata()
+        self._save_cache_metadata()  # Ensure metadata file exists
     
     def _load_cache_metadata(self) -> Dict[str, Any]:
         """Load cache metadata (last accessed, sizes, etc.)"""
@@ -62,7 +59,9 @@ class ModelCacheService:
     
     def _get_model_cache_path(self, model_id: str) -> Path:
         """Get local cache path for a model."""
-        return self.cache_dir / "models" / model_id
+        path = self.cache_dir / "models" / model_id
+        path.parent.mkdir(parents=True, exist_ok=True)  # Ensure models directory exists
+        return path
     
     def _is_model_cached(self, model_id: str) -> bool:
         """Check if model is already cached locally."""
@@ -121,7 +120,7 @@ class ModelCacheService:
             }
             self._save_cache_metadata()
             
-            print(f"✅ Downloaded model {model_id} from S3 to cache")
+            print(f"Downloaded model {model_id} from S3 to cache")
             return cache_path
             
         except Exception as e:
@@ -146,7 +145,7 @@ class ModelCacheService:
                         s3_key
                     )
             
-            print(f"✅ Uploaded model {model_id} to S3")
+            print(f"Uploaded model {model_id} to S3")
             
         except Exception as e:
             print(f"⚠️ Warning: Failed to upload model {model_id} to S3: {str(e)}")
@@ -181,12 +180,41 @@ class ModelCacheService:
             self.cache_metadata[model_id]["last_accessed"] = datetime.now().isoformat()
             self._save_cache_metadata()
         
-        cache_path = self._get_model_cache_path(model_id)
-        print(f"📁 Serving model {model_id} from cache: {cache_path}")
+        # Create a temporary directory with the SDK structure
+        temp_dir = Path(tempfile.mkdtemp())
+        models_dir = temp_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
         
-        # Return the cache directory's parent so SDK can find models/model_id structure
-        # The cache_path points to cache/models/model_id, so we need cache/ directory
-        return cache_path.parent.parent
+        # Copy from cache to temp SDK structure
+        cache_path = self._get_model_cache_path(model_id)
+        model_dir = models_dir / model_id
+        shutil.copytree(cache_path, model_dir, dirs_exist_ok=True)
+        
+        # Fix the metadata paths to be relative to the model directory
+        metadata_file = model_dir / "metadata.json"
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            # Update artifact paths to be relative
+            for artifact_name, artifact_info in metadata.get("artifacts", {}).items():
+                # Get the filename from the original path
+                original_path = Path(artifact_info["path"])
+                filename = original_path.name
+                
+                # Update to a relative path
+                artifact_info["path"] = filename
+            
+            # Update main model path to be relative
+            if "path" in metadata:
+                metadata["path"] = "model.pkl"
+            
+            # Save the updated metadata
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
+        
+        print(f"📁 Serving model {model_id} from cache via {temp_dir}")
+        return temp_dir
     
     def save_model_from_sdk(self, model_id: str, sdk_dir: Path) -> Path:
         """
@@ -201,12 +229,19 @@ class ModelCacheService:
         """
         # Copy from SDK temp directory to our cache
         sdk_model_path = sdk_dir / "models" / model_id
+        if not sdk_model_path.exists():
+            raise ValueError(f"Model {model_id} not found in SDK directory: {sdk_model_path}")
+            
         cache_path = self._get_model_cache_path(model_id)
+        
+        # Ensure parent directories exist
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         
         if cache_path.exists():
             shutil.rmtree(cache_path)
         
-        shutil.copytree(sdk_model_path, cache_path)
+        # Copy the model files
+        shutil.copytree(sdk_model_path, cache_path, dirs_exist_ok=True)
         
         # Fix the metadata paths to point to the cache directory
         metadata_file = cache_path / "metadata.json"
@@ -214,15 +249,18 @@ class ModelCacheService:
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
             
-            # Update artifact paths to be relative to the cache directory
+            # Update artifact paths to be relative to the model directory
             for artifact_name, artifact_info in metadata.get("artifacts", {}).items():
                 # Get the filename from the original path
                 original_path = Path(artifact_info["path"])
                 filename = original_path.name
                 
-                # Update to the new cache path
-                new_path = cache_path / filename
-                artifact_info["path"] = str(new_path)
+                # Update to a relative path
+                artifact_info["path"] = filename
+            
+            # Update main model path to be relative
+            if "path" in metadata:
+                metadata["path"] = "model.pkl"
             
             # Save the updated metadata
             with open(metadata_file, 'w') as f:

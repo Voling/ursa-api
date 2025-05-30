@@ -6,111 +6,99 @@ import tempfile
 from pathlib import Path
 from contextlib import contextmanager
 from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch
+import shutil
 
 from app.main import app
-from app.db.database import get_db
+from app.ursaml import UrsaMLStorage
+from app.config import Settings
 from app.services.model_cache_service import ModelCacheService
 
 
-# Test database setup - PostgreSQL on port 5432
-@pytest.fixture(scope="function")
-def test_db():
-    """Create a test database session using PostgreSQL on port 5432."""
-    from app.db.database import SessionLocal
-    from app.config import settings
-    from sqlalchemy import text
-    
-    # Verify we're using PostgreSQL on port 5432
-    db_url = str(settings.DATABASE_URL)
-    assert "postgresql://" in db_url, f"Expected PostgreSQL, got: {db_url}"
-    assert ":5432/" in db_url, f"Expected port 5432, got: {db_url}"
-    
-    # For API tests, we need to use the regular SessionLocal without cleanup per session
-    # Cleanup will happen at the end of the test
-    yield SessionLocal
-    
-    # Clean up all test data after the entire test
-    cleanup_session = SessionLocal()
-    try:
-        # Delete all data from tables in proper order (respecting foreign keys)
-        cleanup_session.execute(text("DELETE FROM metrics"))
-        cleanup_session.execute(text("DELETE FROM edges"))
-        cleanup_session.execute(text("DELETE FROM nodes"))
-        cleanup_session.execute(text("DELETE FROM models"))
-        cleanup_session.execute(text("DELETE FROM graphs"))
-        cleanup_session.execute(text("DELETE FROM projects"))
-        cleanup_session.commit()
-    except Exception:
-        cleanup_session.rollback()
-    finally:
-        cleanup_session.close()
+@pytest.fixture(autouse=True)
+def test_settings():
+    """Override settings for testing."""
+    with patch("app.config.settings") as mock_settings:
+        # Create a temporary test settings
+        test_settings = Settings(
+            STORAGE_TYPE="filesystem",
+            MODEL_STORAGE_DIR=tempfile.mkdtemp(),
+            URSAML_STORAGE_DIR=tempfile.mkdtemp()
+        )
+        
+        # Update the mock to use our test settings
+        for key, value in test_settings.dict().items():
+            setattr(mock_settings, key, value)
+        
+        yield test_settings
+        
+        # Cleanup temp directories
+        shutil.rmtree(test_settings.MODEL_STORAGE_DIR, ignore_errors=True)
+        shutil.rmtree(test_settings.URSAML_STORAGE_DIR, ignore_errors=True)
 
 
-@pytest.fixture(scope="function") 
-def db_session(test_db):
-    """Create a database session for testing."""
-    session = test_db()
-    try:
-        yield session
-    finally:
-        session.close()
+@pytest.fixture
+def test_storage_dir():
+    """Create a temporary directory for test storage."""
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    # Cleanup after test
+    shutil.rmtree(temp_dir)
 
 
-@pytest.fixture(scope="function")
-def isolated_db():
-    """Create an isolated database session with cleanup for integration tests."""
-    from app.db.database import SessionLocal
-    from app.config import settings
-    from sqlalchemy import text
-    
-    # Verify we're using PostgreSQL on port 5432
-    db_url = str(settings.DATABASE_URL)
-    assert "postgresql://" in db_url, f"Expected PostgreSQL, got: {db_url}"
-    assert ":5432/" in db_url, f"Expected port 5432, got: {db_url}"
-    
-    @contextmanager 
-    def get_clean_session():
-        """Get a session with cleanup after each use."""
-        session = SessionLocal()
-        try:
-            yield session
-        finally:
-            # Clean up all test data after each session
-            try:
-                # Delete all data from tables in proper order (respecting foreign keys)
-                session.execute(text("DELETE FROM metrics"))
-                session.execute(text("DELETE FROM edges"))
-                session.execute(text("DELETE FROM nodes"))
-                session.execute(text("DELETE FROM models"))
-                session.execute(text("DELETE FROM graphs"))
-                session.execute(text("DELETE FROM projects"))
-                session.commit()
-            except Exception:
-                session.rollback()
-            finally:
-                session.close()
-    
-    # Return the session factory
-    yield get_clean_session
+@pytest.fixture
+def storage(test_storage_dir):
+    """Create a test UrsaML storage instance."""
+    return UrsaMLStorage(base_path=test_storage_dir)
 
 
-@pytest.fixture(scope="function")
-def client(test_db):
-    """Create a test client with test database."""
-    def override_get_db():
-        db = test_db()
-        try:
-            yield db
-        finally:
-            db.close()
+@pytest.fixture
+def client():
+    """Create test client."""
+    return TestClient(app)
+
+
+@pytest.fixture
+def sample_project(storage):
+    """Create a sample project for testing."""
+    project_data = {
+        "name": "Test Project",
+        "description": "A test project"
+    }
+    project = storage.create_project(project_data["name"], project_data["description"])
+    project["project_id"] = project["id"]  # Add project_id for API compatibility
+    return project
+
+
+@pytest.fixture
+def sample_graph(storage, sample_project):
+    """Create a sample graph for testing."""
+    graph_data = {
+        "name": "Test Graph",
+        "description": "A test graph"
+    }
+    graph = storage.create_graph(sample_project["id"], graph_data["name"], graph_data["description"])
+    graph["graph_id"] = graph["id"]  # Add graph_id for API compatibility
+    return graph
+
+
+@pytest.fixture
+def sample_node(storage, sample_graph):
+    """Create a sample node for testing."""
+    node = storage.create_node(sample_graph['id'], "Test Node")
+    return node
+
+
+@pytest.fixture
+def base64_model():
+    """Create a base64 encoded test model."""
+    import pickle
+    import base64
     
-    app.dependency_overrides[get_db] = override_get_db
-    
-    with TestClient(app) as test_client:
-        yield test_client
-    
-    # Clean up dependency override
-    app.dependency_overrides.clear()
+    # Create a simple mock model
+    model = {"type": "test_model", "data": [1, 2, 3]}
+    model_bytes = pickle.dumps(model)
+    return base64.b64encode(model_bytes).decode('utf-8')
 
 
 @pytest.fixture(scope="function")
@@ -121,35 +109,24 @@ def temp_cache_dir():
 
 
 @pytest.fixture(scope="function")
-def test_cache_service():
+def test_cache_service(test_settings):
     """Create a test cache service with temporary directory."""
-    # Create our own temporary directory that persists for the test
-    import tempfile
-    temp_dir = tempfile.mkdtemp()
-    cache_dir = Path(temp_dir) / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Temporarily override the cache directory
-    original_init = ModelCacheService.__init__
-    
-    def mock_init(self):
-        self.cache_dir = cache_dir
-        self.s3_client = None  # No S3 for testing
-        self.cache_metadata_file = self.cache_dir / "cache_metadata.json"
-        self.cache_metadata = self._load_cache_metadata()
-    
-    ModelCacheService.__init__ = mock_init
-    
     service = ModelCacheService()
+    
+    # Clean up any existing cache
+    if service.cache_dir.exists():
+        shutil.rmtree(service.cache_dir)
+    service.cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Reset cache metadata
+    service.cache_metadata = {}
+    service._save_cache_metadata()
     
     yield service
     
-    # Restore original __init__
-    ModelCacheService.__init__ = original_init
-    
-    # Clean up the temporary directory
-    import shutil
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    # Cleanup after test
+    if service.cache_dir.exists():
+        shutil.rmtree(service.cache_dir)
 
 
 @pytest.fixture

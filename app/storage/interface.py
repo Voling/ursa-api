@@ -3,7 +3,7 @@ from typing import BinaryIO, Optional
 
 class ModelStorage(ABC):
     """
-    Abstract interface for model storage. Supportsboth S3 and local filesystem.
+    Abstract interface for model storage. Supports both S3 and local filesystem.
     """
     
     @abstractmethod

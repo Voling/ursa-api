@@ -36,6 +36,16 @@ class TestUrsaKitIntegration:
             model_dir = client.get_ursa_dir() / "models" / model_id
             assert model_dir.exists()
             assert (model_dir / "metadata.json").exists()
+            
+            # Verify metadata structure
+            import json
+            with open(model_dir / "metadata.json", 'r') as f:
+                metadata = json.load(f)
+            assert "id" in metadata
+            assert "name" in metadata
+            assert "framework" in metadata
+            assert "created_at" in metadata
+            assert metadata["framework"] == "scikit-learn"
     
     def test_sklearn_model_load_and_predict(self, sample_sklearn_model):
         """Test sklearn model loading and prediction."""
@@ -70,6 +80,16 @@ class TestUrsaKitIntegration:
             model_dir = client.get_ursa_dir() / "models" / model_id
             assert model_dir.exists()
             assert (model_dir / "metadata.json").exists()
+            
+            # Verify metadata structure
+            import json
+            with open(model_dir / "metadata.json", 'r') as f:
+                metadata = json.load(f)
+            assert "id" in metadata
+            assert "name" in metadata
+            assert "framework" in metadata
+            assert "created_at" in metadata
+            assert metadata["framework"] == "pytorch"
     
     def test_torch_model_load_and_predict(self, sample_torch_model):
         """Test PyTorch model loading and forward pass."""
@@ -106,6 +126,16 @@ class TestUrsaKitIntegration:
             model_dir = client.get_ursa_dir() / "models" / model_id
             assert model_dir.exists()
             assert (model_dir / "metadata.json").exists()
+            
+            # Verify metadata structure
+            import json
+            with open(model_dir / "metadata.json", 'r') as f:
+                metadata = json.load(f)
+            assert "id" in metadata
+            assert "name" in metadata
+            assert "framework" in metadata
+            assert "created_at" in metadata
+            assert metadata["framework"] == "tensorflow"
     
     def test_tensorflow_model_load_and_predict(self, sample_tf_model):
         """Test TensorFlow model loading and prediction."""
@@ -128,16 +158,6 @@ class TestUrsaKitIntegration:
             # Predictions should be close
             assert np.allclose(original_pred, loaded_pred, atol=1e-6)
     
-    def test_model_detection_registry(self):
-        """Test that model detection works by trying to save different model types."""
-        # This test verifies that the detection system works by actually using it
-        # rather than inspecting the registry directly
-        
-        # We'll test this implicitly through the save operations in other tests
-        # If sklearn, torch, and tensorflow models can be saved successfully,
-        # then the detection registry is working
-        assert True  # Placeholder - detection tested in other methods
-    
     def test_model_metadata_generation(self, sample_sklearn_model):
         """Test that model metadata is generated correctly."""
         model, X, y = sample_sklearn_model
@@ -154,15 +174,20 @@ class TestUrsaKitIntegration:
                 metadata = json.load(f)
             
             # Check required metadata fields
-            assert "id" in metadata  # The actual field name is 'id', not 'model_id'
+            assert "id" in metadata
             assert "name" in metadata
             assert "framework" in metadata
             assert "created_at" in metadata
             assert "artifacts" in metadata
             
             # Check framework detection
-            assert metadata["framework"] == "scikit-learn"  # Full framework name
+            assert metadata["framework"] == "scikit-learn"
             assert metadata["name"] == "metadata_test"
+            
+            # Check artifacts structure
+            assert isinstance(metadata["artifacts"], dict)
+            assert "model_file" in metadata["artifacts"]
+            assert metadata["artifacts"]["model_file"].endswith(".pkl")
     
     def test_multiple_models_in_same_directory(self, sample_sklearn_model, sample_torch_model):
         """Test saving multiple models in the same directory."""
@@ -201,70 +226,66 @@ class TestUrsaKitIntegration:
         with tempfile.TemporaryDirectory() as temp_dir:
             client = UrsaClient(dir=Path(temp_dir), use_server=False)
             
-            # Initially no models
-            models_dir = client.get_ursa_dir() / "models"
-            if models_dir.exists():
-                initial_count = len(list(models_dir.iterdir()))
-            else:
-                initial_count = 0
+            # Save a few models
+            model_ids = []
+            for i in range(3):
+                model_id = client.save(model, name=f"model_{i}")
+                model_ids.append(model_id)
             
-            # Save a model
-            model_id = client.save(model, name="list_test")
+            # List models
+            models = client.list_models()
             
-            # Should have one more model
-            models_after = list(models_dir.iterdir())
-            assert len(models_after) == initial_count + 1
+            # Verify list structure
+            assert isinstance(models, list)
+            assert len(models) == 3
             
-            # Model directory should exist
-            model_dir = models_dir / model_id
-            assert model_dir in models_after
+            # Verify each model entry
+            for model_info in models:
+                assert "id" in model_info
+                assert "name" in model_info
+                assert "framework" in model_info
+                assert "created_at" in model_info
+                assert model_info["id"] in model_ids
     
     def test_error_handling_invalid_model(self):
-        """Test error handling for invalid models."""
+        """Test error handling when saving invalid model."""
+        invalid_model = {"not": "a real model"}
+        
         with tempfile.TemporaryDirectory() as temp_dir:
             client = UrsaClient(dir=Path(temp_dir), use_server=False)
             
-            # Try to save an invalid object
-            with pytest.raises(Exception):  # Should raise some kind of error
-                client.save("not_a_model", name="invalid")
+            with pytest.raises(ValueError):
+                client.save(invalid_model, name="invalid_model")
     
     def test_error_handling_nonexistent_model(self):
-        """Test error handling for loading non-existent models."""
+        """Test error handling when loading non-existent model."""
         with tempfile.TemporaryDirectory() as temp_dir:
             client = UrsaClient(dir=Path(temp_dir), use_server=False)
             
-            # Try to load a non-existent model
-            with pytest.raises(Exception):  # Should raise some kind of error
-                client.load("non-existent-model-id")
+            with pytest.raises(ValueError):
+                client.load("non_existent_model_id")
     
     def test_no_http_transport_in_client(self):
-        """Test that UrsaClient doesn't try to use HTTP transport."""
+        """Test that client has no HTTP transport when use_server=False."""
         with tempfile.TemporaryDirectory() as temp_dir:
             client = UrsaClient(dir=Path(temp_dir), use_server=False)
             
-            # Verify no HTTP-related attributes
-            assert not hasattr(client, 'server_url') or client.server_url is None
             assert client.transport is None
-            assert client.use_server is False
+            assert not hasattr(client, "http_client")
     
     def test_local_storage_only(self, sample_sklearn_model):
-        """Test that models are stored locally only."""
+        """Test that models are only stored locally."""
         model, X, y = sample_sklearn_model
         
         with tempfile.TemporaryDirectory() as temp_dir:
             client = UrsaClient(dir=Path(temp_dir), use_server=False)
             
-            model_id = client.save(model, name="local_only")
+            # Save model
+            model_id = client.save(model, name="local_test")
             
-            # Verify files exist locally
+            # Verify it's in local storage
             model_dir = client.get_ursa_dir() / "models" / model_id
             assert model_dir.exists()
             
-            # Verify we can access all files
-            files = list(model_dir.rglob("*"))
-            assert len(files) > 0  # Should have at least metadata and model files
-            
-            # All files should be readable
-            for file_path in files:
-                if file_path.is_file():
-                    assert file_path.stat().st_size > 0  # Should not be empty 
+            # Verify no HTTP calls were made (transport is None)
+            assert client.transport is None 

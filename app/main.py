@@ -1,13 +1,7 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
 
-from app.db.database import get_db
-from app.db import init_db
-from app.storage import get_storage
 from app.routers import models, metrics, nodes, projects, graphs
-
-# Database will be initialized when the server starts
 
 app = FastAPI(
     title="Ursa API",

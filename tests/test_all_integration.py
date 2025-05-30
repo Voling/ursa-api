@@ -11,10 +11,10 @@ from app.services.model_cache_service import ModelCacheService
 from ursakit.client import UrsaClient
 
 
-class TestComprehensiveIntegration:
+class TestAllIntegration:
     """Test the complete integration flow."""
     
-    def test_end_to_end_model_flow(self, sample_sklearn_model):
+    def test_model_flow(self, sample_sklearn_model):
         """Test the complete end-to-end model flow with caching."""
         model, X, y = sample_sklearn_model
         
@@ -36,11 +36,11 @@ class TestComprehensiveIntegration:
                 sdk_client = UrsaClient(dir=temp_path, use_server=False)
                 
                 model_id = sdk_client.save(model, name="integration_test")
-                print(f"✅ Model saved with ID: {model_id}")
+                print(f"Model saved with ID: {model_id}")
                 
                 # Step 2: Cache the model (simulating ursa-api caching)
                 cache_path = cache_service.save_model_from_sdk(model_id, temp_path)
-                print(f"✅ Model cached at: {cache_path}")
+                print(f"Model cached at: {cache_path}")
                 
                 # Verify caching worked
                 assert cache_service._is_model_cached(model_id)
@@ -53,9 +53,9 @@ class TestComprehensiveIntegration:
             
             # Get the cache directory for SDK use
             sdk_cache_dir = cache_service.get_model_for_sdk(model_id)
-            print(f"✅ Retrieved cache directory: {sdk_cache_dir}")
+            print(f"Retrieved cache directory: {sdk_cache_dir}")
             
-            # Verify the cache directory structure
+            #Verify cache structure
             assert sdk_cache_dir.exists()
             models_dir = sdk_cache_dir / "models" / model_id
             assert models_dir.exists()
@@ -66,20 +66,20 @@ class TestComprehensiveIntegration:
             
             # Load model from cache
             loaded_model = cache_sdk_client.load(model_id)
-            print(f"✅ Model loaded from cache")
+            print(f"Model loaded from cache")
             
             # Step 4: Test that cached model works correctly
             original_predictions = model.predict(X[:5])
             cached_predictions = loaded_model.predict(X[:5])
             
             assert all(original_predictions == cached_predictions)
-            print(f"✅ Predictions match: {original_predictions}")
+            print(f"Predictions match: {original_predictions}")
             
             # Step 5: Test cache statistics
             stats = cache_service.get_cache_stats()
             assert stats["total_models"] == 1
             assert stats["total_size_mb"] > 0
-            print(f"✅ Cache stats: {stats}")
+            print(f"Cache stats: {stats}")
             
             print("🎉 End-to-end integration test passed!")
     
@@ -139,7 +139,7 @@ class TestComprehensiveIntegration:
                 torch_output = torch_loaded(X_torch)
                 assert torch_output is not None
             
-            print("✅ Multiple models cached and loaded successfully")
+            print("Multiple models cached and loaded successfully")
     
     def test_cache_cleanup_functionality(self, sample_sklearn_model):
         """Test cache cleanup functionality."""
@@ -176,4 +176,5 @@ class TestComprehensiveIntegration:
             # Cache stats should show 0 models
             stats = cache_service.get_cache_stats()
             assert stats["total_models"] == 0
-            print("✅ Cache cleanup working correctly") 
+            assert stats["total_size_mb"] == 0
+            print("Cache cleanup working correctly") 

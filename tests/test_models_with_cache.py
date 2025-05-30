@@ -19,21 +19,39 @@ class TestModelsWithCache:
         """Test creating a model using the standard models endpoint."""
         model, X, y = sample_sklearn_model
         
+        # Create a project and graph first
+        project_response = client.post("/projects/", json={
+            "name": "Test Project",
+            "description": "A test project"
+        })
+        assert project_response.status_code in [200, 201]
+        project_id = project_response.json()["project_id"]
+        
+        graph_response = client.post(f"/projects/{project_id}/graphs/", json={
+            "name": "Test Graph",
+            "description": "A test graph"
+        })
+        assert graph_response.status_code in [200, 201]
+        graph_id = graph_response.json()["graph_id"]
+        
         # Serialize model for upload
         model_bytes = pickle.dumps(model)
         model_b64 = base64.b64encode(model_bytes).decode('utf-8')
         
         upload_data = {
             "file": model_b64,
-            "project_id": "test-project",
-            "graph_id": "test-graph"
+            "project_id": project_id,
+            "graph_id": graph_id
         }
         
         # Use the standard models endpoint
         response = client.post("/models/", json=upload_data)
         
         # Should work with the standard endpoint
-        assert response.status_code in [200, 201, 422, 500]
+        assert response.status_code in [200, 201]
+        data = response.json()
+        assert "model_id" in data
+        assert "node_id" in data
     
     def test_get_model_from_cache(self, client):
         """Test retrieving a model using the standard endpoint."""
