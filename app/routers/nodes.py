@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Path, Depends
-from app.schemas.api_schemas import NodeDelete, NodeUpdate, NodeResponse, GraphStructure, Node as NodeSchema, Edge
+from app.schemas.api_schemas import NodeUpdate, NodeResponse, GraphStructure, Node as NodeSchema, Edge
 from app.ursaml import UrsaMLStorage
 from app.config import settings
 from typing import List
@@ -15,7 +15,6 @@ def delete_node(
     project_id: str,
     graph_id: str,
     node_id: str,
-    node_data: NodeDelete,
     storage: UrsaMLStorage = Depends(get_storage)
 ):
     """

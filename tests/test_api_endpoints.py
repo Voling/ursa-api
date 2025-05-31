@@ -160,8 +160,6 @@ class TestNodeEndpoints:
         assert model_response.status_code in [200, 201]
         model_data = model_response.json()
         node_id = model_data["node_id"]
-        
-        # Delete the node
         response = client.delete(
             f"/projects/{sample_project['project_id']}/graphs/{sample_graph['graph_id']}/nodes/{node_id}"
         )
@@ -293,38 +291,76 @@ class TestHealthAndStatus:
 class TestStorageIntegration:
     """Test integration with UrsaML storage."""
     
-    def test_project_persists_in_storage(self, client, storage):
+    def test_project_persists_in_storage(self, client):
         """Test that created projects persist in storage."""
         project_data = {
             "name": "Storage Test Project",
             "description": "Testing storage persistence"
         }
         
-        response = client.post("/projects/", json=project_data)
-        project_id = response.json()["project_id"]
+        # Create project
+        create_response = client.post("/projects/", json=project_data)
+        assert create_response.status_code == 201
+        project_id = create_response.json()["project_id"]
         
-        # Verify project exists in storage
-        project = storage.get_project(project_id)
-        assert project is not None
+        # Verify project exists by getting it through the API
+        get_response = client.get(f"/projects/{project_id}")
+        assert get_response.status_code == 200
+        
+        project = get_response.json()
         assert project["name"] == project_data["name"]
         assert project["description"] == project_data["description"]
+        
+        # Verify project appears in the list of all projects
+        list_response = client.get("/projects")
+        assert list_response.status_code == 200
+        projects = list_response.json()
+        
+        found = False
+        for p in projects:
+            if p["project_id"] == project_id:
+                found = True
+                assert p["name"] == project_data["name"]
+                assert p["description"] == project_data["description"]
+                break
+        
+        assert found, "Project not found in list of all projects"
     
-    def test_graph_persists_in_storage(self, client, storage, sample_project):
+    def test_graph_persists_in_storage(self, client):
         """Test that created graphs persist in storage."""
+        # First create a project
+        project_data = {
+            "name": "Graph Test Project",
+            "description": "Testing graph persistence"
+        }
+        project_response = client.post("/projects/", json=project_data)
+        assert project_response.status_code == 201
+        project_id = project_response.json()["project_id"]
+        
+        # Create a graph in the project
         graph_data = {
             "name": "Storage Test Graph",
             "description": "Testing graph storage"
         }
+        create_response = client.post(f"/projects/{project_id}/graphs", json=graph_data)
+        assert create_response.status_code in [200, 201]
+        graph_id = create_response.json()["graph_id"]
         
-        response = client.post(f"/projects/{sample_project['project_id']}/graphs", json=graph_data)
-        graph_id = response.json()["graph_id"]
+        # Verify graph exists by getting project's graphs
+        graphs_response = client.get(f"/projects/{project_id}/graphs")
+        assert graphs_response.status_code == 200
+        graphs = graphs_response.json()
         
-        # Verify graph exists in storage
-        graph = storage.get_graph(graph_id)
-        assert graph is not None
-        assert graph["name"] == graph_data["name"]
-        assert graph["description"] == graph_data["description"]
-        assert graph["project_id"] == sample_project["project_id"]
+        found = False
+        for graph in graphs:
+            if graph["graph_id"] == graph_id:
+                found = True
+                assert graph["name"] == graph_data["name"]
+                assert graph["description"] == graph_data["description"]
+                assert graph["project_id"] == project_id
+                break
+        
+        assert found, "Graph not found in project's graphs"
 
 
 class TestErrorHandling:

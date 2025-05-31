@@ -187,6 +187,7 @@ def test_log_metrics():
     # Log metrics
     response = client.post("/metrics/", json={
         "model_id": node_id,
+        "graph_id": graph_id,
         "metrics": '{"accuracy": 0.95, "loss": 0.05, "epochs": 10}'
     })
     assert response.status_code == 200

@@ -45,10 +45,7 @@ class AllNodeMetricsResponse(BaseModel):
     graph_id: str = Field(..., description="ID of the graph")
     metrics: Dict[str, Dict[str, Any]] = Field(..., description="Metrics for each node in the graph")
 
-# Node schemas
-class NodeDelete(BaseModel):
-    model_id: str = Field(..., description="ID of the model associated with the node")
-
+# Node schema
 class NodeUpdate(BaseModel):
     node_id: str = Field(..., description="ID of the node to update")
     metadata: Dict[str, Any] = Field(..., description="Metadata to update for the node")
