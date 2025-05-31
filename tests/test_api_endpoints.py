@@ -168,6 +168,79 @@ class TestNodeEndpoints:
         data = response.json()
         assert data["success"] is True
 
+    def test_model_swap_comprehensive(self, client, sample_project, sample_graph, sample_sklearn_model):
+        """Test comprehensive model swapping functionality."""
+        model, X, y = sample_sklearn_model
+        
+        # Create first model
+        model_bytes = pickle.dumps(model)
+        model_b64 = base64.b64encode(model_bytes).decode('utf-8')
+        
+        first_model_data = {
+            "file": model_b64,
+            "project_id": sample_project["project_id"],
+            "graph_id": sample_graph["graph_id"]
+        }
+        
+        # Upload first model
+        first_response = client.post("/models/", json=first_model_data)
+        assert first_response.status_code in [200, 201]
+        first_model = first_response.json()
+        first_model_id = first_model["model_id"]
+        node_id = first_model["node_id"]
+        
+        # Verify node has first model
+        node_response = client.get(
+            f"/projects/{sample_project['project_id']}/graphs/{sample_graph['graph_id']}/nodes/{node_id}"
+        )
+        assert node_response.status_code == 200
+        node_data = node_response.json()
+        assert node_data["model_id"] == first_model_id
+        
+        # Create second model (using same model for simplicity)
+        second_model_data = {
+            "file": model_b64,
+            "project_id": sample_project["project_id"],
+            "graph_id": sample_graph["graph_id"]
+        }
+        
+        # Upload second model
+        second_response = client.post("/models/", json=second_model_data)
+        assert second_response.status_code in [200, 201]
+        second_model = second_response.json()
+        second_model_id = second_model["model_id"]
+        
+        # Swap model in node
+        update_data = {
+            "node_id": node_id,
+            "metadata": {
+                "model_id": second_model_id,
+                "type": "classifier"
+            }
+        }
+        
+        swap_response = client.put(
+            f"/projects/{sample_project['project_id']}/graphs/{sample_graph['graph_id']}/nodes/{node_id}/model",
+            json=update_data
+        )
+        assert swap_response.status_code == 200
+        assert swap_response.json()["success"] is True
+        
+        # Verify node now has second model
+        node_response = client.get(
+            f"/projects/{sample_project['project_id']}/graphs/{sample_graph['graph_id']}/nodes/{node_id}"
+        )
+        assert node_response.status_code == 200
+        node_data = node_response.json()
+        assert node_data["model_id"] == second_model_id
+        assert node_data["model_id"] != first_model_id
+        
+        # Verify both models still exist and are accessible
+        first_model_response = client.get(f"/models/{first_model_id}")
+        assert first_model_response.status_code == 200
+        second_model_response = client.get(f"/models/{second_model_id}")
+        assert second_model_response.status_code == 200
+
 
 class TestModelEndpoints:
     """Test model-related API endpoints."""
