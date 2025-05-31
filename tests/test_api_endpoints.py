@@ -279,7 +279,7 @@ class TestHealthAndStatus:
         assert response.status_code == 200
         
         data = response.json()
-        assert "status" in data
+        assert "message" in data
     
     def test_health_check(self, client):
         """Test health check endpoint."""

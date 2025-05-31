@@ -1,22 +1,23 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-import tempfile
 import shutil
 from pathlib import Path
 from app.ursaml import UrsaMLStorage
+from app.config import settings, REPO_ROOT
 
 @pytest.fixture(autouse=True)
 def clean_storage():
     """Ensure clean storage before each test."""
-    # Create a temporary directory for this test
-    temp_dir = tempfile.mkdtemp()
+    # Use repository storage directory
+    storage_dir = REPO_ROOT / "storage" / "ursaml"
+    storage_dir.mkdir(parents=True, exist_ok=True)
     
-    # Override the UrsaMLStorage to use temp directory
+    # Override the UrsaMLStorage to use repo directory
     original_init = UrsaMLStorage.__init__
     
     def mock_init(self, base_path=None):
-        self.base_path = Path(temp_dir)
+        self.base_path = storage_dir
         self.projects_path = self.base_path / "projects"
         self.graphs_path = self.base_path / "graphs"
         self.models_path = self.base_path / "models"
@@ -34,9 +35,14 @@ def clean_storage():
     
     yield
     
-    # Restore original init and cleanup
+    # Restore original init and cleanup but keep structure
     UrsaMLStorage.__init__ = original_init
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    for item in storage_dir.glob("*"):
+        if item.name != ".gitkeep":
+            if item.is_file():
+                item.unlink()
+            else:
+                shutil.rmtree(item)
 
 client = TestClient(app)
 

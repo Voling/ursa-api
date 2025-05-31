@@ -6,10 +6,9 @@ from typing import Dict
 from datetime import datetime
 import base64
 import uuid
-import tempfile
 from pathlib import Path
 import pickle
-from app.config import settings
+from app.config import settings, REPO_ROOT
 import json
 
 router = APIRouter()
@@ -55,43 +54,44 @@ def save_model(
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         model_name = f"model_{timestamp}"
         
-        # Create a temporary directory for the model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            models_dir = temp_path / "models"
-            models_dir.mkdir(parents=True)
-            
-            # Save model file
-            model_dir = models_dir / model_id
-            model_dir.mkdir(parents=True)
-            
-            # Save model metadata
-            metadata = {
-                "id": model_id,
-                "name": model_name,
-                "created_at": datetime.now().isoformat(),
-                "framework": "unknown",  # Will be detected by SDK
-                "model_type": "unknown",  # Will be detected by SDK
-                "artifacts": {
-                    "model": {
-                        "path": str(model_dir / "model.pkl"),
-                        "type": "pickle"
-                    }
-                },
-                "serializer": "pickle_serializer",
-                "path": str(model_dir / "model.pkl"),
-                "metadata": {}
-            }
-            
-            with open(model_dir / "metadata.json", 'w') as f:
-                json.dump(metadata, f, indent=2)
-            
-            # Save model file
-            with open(model_dir / "model.pkl", 'wb') as f:
-                f.write(model_bytes)
-            
-            # Cache the model
-            cache_service.save_model_from_sdk(model_id, temp_path)
+        # Use repository storage for the model
+        sdk_dir = REPO_ROOT / "storage" / "models"
+        sdk_dir.mkdir(parents=True, exist_ok=True)
+        models_dir = sdk_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save model file
+        model_dir = models_dir / model_id
+        model_dir.mkdir(parents=True)
+        
+        # Save model metadata
+        metadata = {
+            "id": model_id,
+            "name": model_name,
+            "created_at": datetime.now().isoformat(),
+            "framework": "unknown",  # Will be detected by SDK
+            "model_type": "unknown",  # Will be detected by SDK
+            "artifacts": {
+                "model": {
+                    "path": str(model_dir / "model"),  # Let SDK determine extension
+                    "type": "unknown"  # Let SDK determine type
+                }
+            },
+            "serializer": "unknown",  # Let SDK determine serializer
+            "path": str(model_dir / "model"),  # Let SDK determine extension
+            "metadata": {}
+        }
+        
+        with open(model_dir / "metadata.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        # Save model file
+        model_file = model_dir / "model"  # Let SDK determine extension
+        with open(model_file, 'wb') as f:
+            f.write(model_bytes)
+        
+        # Cache the model
+        cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Create node for the model
         node = storage.create_node(
@@ -159,20 +159,32 @@ def load_model_data(
         # Get model from cache
         model_dir = cache_service.get_model_for_sdk(model_id)
         
-        # Read model file
-        with open(model_dir / "models" / model_id / "model.pkl", 'rb') as f:
-            model_data = f.read()
-        
-        # Read metadata
-        with open(model_dir / "models" / model_id / "metadata.json", 'r') as f:
+        # Read metadata to get model path
+        metadata_path = model_dir / "models" / model_id / "metadata.json"
+        with open(metadata_path, 'r') as f:
             metadata = json.load(f)
+        
+        # Get model path from metadata
+        if "path" not in metadata:
+            raise HTTPException(status_code=500, detail="Model metadata missing path")
+            
+        model_path = Path(metadata["path"])
+        if not model_path.exists():
+            # Try relative to model directory
+            model_path = model_dir / "models" / model_id / model_path.name
+            if not model_path.exists():
+                raise HTTPException(status_code=404, detail="Model file not found")
+        
+        # Read model file
+        with open(model_path, 'rb') as f:
+            model_data = f.read()
         
         # Return base64 encoded data
         return {
             "model_id": model_id,
             "data": base64.b64encode(model_data).decode('utf-8'),
-            "framework": "unknown",  # Will be detected by SDK
-            "model_type": "unknown"  # Will be detected by SDK
+            "framework": metadata.get("framework", "unknown"),
+            "model_type": metadata.get("model_type", "unknown")
         }
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")

@@ -11,17 +11,19 @@ This service handles:
 
 import json
 import shutil
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 
 import boto3
-from app.config import settings
+from app.config import settings, REPO_ROOT
 
 
 class ModelCacheService:
-    """Service for managing model caching."""
+    """Service for managing model caching.
+    Intended for S3 synchronization
+    """
     
     def __init__(self):
         self.cache_dir = Path(settings.MODEL_STORAGE_DIR) / "cache"
@@ -29,6 +31,10 @@ class ModelCacheService:
         
         # Create models subdirectory
         (self.cache_dir / "models").mkdir(parents=True, exist_ok=True)
+        
+        # Create temp directory for SDK operations
+        self.sdk_temp_dir = REPO_ROOT / "storage" / "sdk_temp"
+        self.sdk_temp_dir.mkdir(parents=True, exist_ok=True)
         
         # S3 client (only if using S3 storage)
         self.s3_client = None
@@ -63,11 +69,73 @@ class ModelCacheService:
         path.parent.mkdir(parents=True, exist_ok=True)  # Ensure models directory exists
         return path
     
+    def _get_sdk_temp_path(self) -> Path:
+        """Get a temporary directory for SDK operations."""
+        temp_id = str(uuid.uuid4())
+        path = self.sdk_temp_dir / temp_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    def _cleanup_sdk_temp(self, path: Path):
+        """Clean up a temporary SDK directory."""
+        if path.exists() and path.is_relative_to(self.sdk_temp_dir):
+            shutil.rmtree(path)
+    
+    def _get_model_path_from_metadata(self, metadata: Dict[str, Any], base_dir: Path) -> Optional[Path]:
+        """
+        Get model file path from metadata, checking both top-level path and artifacts.
+        Returns None if no valid path found.
+        
+        Args:
+            metadata: Model metadata dictionary
+            base_dir: Base directory to resolve relative paths against
+            
+        Returns:
+            Path to model file if found, None otherwise
+        """
+        # Check top-level path first
+        if "path" in metadata:
+            model_path = Path(metadata["path"])
+            if model_path.exists():
+                return model_path
+            relative_path = base_dir / model_path.name
+            if relative_path.exists():
+                return relative_path
+                
+        # Check artifacts
+        if "artifacts" in metadata:
+            for artifact_info in metadata["artifacts"].values():
+                if "path" in artifact_info:
+                    artifact_path = Path(artifact_info["path"])
+                    if artifact_path.exists():
+                        return artifact_path
+                    relative_path = base_dir / artifact_path.name
+                    if relative_path.exists():
+                        return relative_path
+        
+        return None
+    
     def _is_model_cached(self, model_id: str) -> bool:
         """Check if model is already cached locally."""
         cache_path = self._get_model_cache_path(model_id)
         metadata_path = cache_path / "metadata.json"
-        return cache_path.exists() and metadata_path.exists()
+        
+        # First check if directory and metadata exist
+        if not (cache_path.exists() and metadata_path.exists()):
+            return False
+            
+        # Read metadata to find model file path
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            
+            # Find model path using metadata
+            model_path = self._get_model_path_from_metadata(metadata, cache_path)
+            return model_path is not None
+            
+        except Exception as e:
+            print(f"⚠️ Warning: Error reading metadata for model {model_id}: {str(e)}")
+            return False
     
     def _is_cache_fresh(self, model_id: str, max_age_hours: int = 24) -> bool:
         """Check if cached model is still fresh (not stale)."""
@@ -100,17 +168,36 @@ class ModelCacheService:
                 metadata = json.load(f)
             
             # Download each artifact
-            for artifact_name, artifact_info in metadata.get("artifacts", {}).items():
-                # Extract filename from stored path
-                artifact_filename = Path(artifact_info["path"]).name
-                s3_key = f"models/{model_id}/{artifact_filename}"
-                local_path = cache_path / artifact_filename
+            if "artifacts" in metadata:
+                for artifact_info in metadata["artifacts"].values():
+                    if "path" in artifact_info:
+                        # Extract filename from stored path
+                        artifact_filename = Path(artifact_info["path"]).name
+                        s3_key = f"models/{model_id}/{artifact_filename}"
+                        local_path = cache_path / artifact_filename
+                        
+                        self.s3_client.download_file(
+                            settings.S3_BUCKET,
+                            s3_key,
+                            str(local_path)
+                        )
+            
+            # Download main model file if specified in top-level path
+            if "path" in metadata:
+                model_filename = Path(metadata["path"]).name
+                s3_key = f"models/{model_id}/{model_filename}"
+                local_path = cache_path / model_filename
                 
                 self.s3_client.download_file(
                     settings.S3_BUCKET,
                     s3_key,
                     str(local_path)
                 )
+            
+            # Verify we have the model file
+            model_path = self._get_model_path_from_metadata(metadata, cache_path)
+            if not model_path:
+                raise ValueError("No model file found in metadata")
             
             # Update cache metadata
             self.cache_metadata[model_id] = {
@@ -181,7 +268,7 @@ class ModelCacheService:
             self._save_cache_metadata()
         
         # Create a temporary directory with the SDK structure
-        temp_dir = Path(tempfile.mkdtemp())
+        temp_dir = self._get_sdk_temp_path()
         models_dir = temp_dir / "models"
         models_dir.mkdir(parents=True, exist_ok=True)
         
@@ -196,22 +283,22 @@ class ModelCacheService:
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
             
-            # Update artifact paths to be relative
-            for artifact_name, artifact_info in metadata.get("artifacts", {}).items():
-                # Get the filename from the original path
-                original_path = Path(artifact_info["path"])
-                filename = original_path.name
+            # Get model path from metadata
+            model_path = self._get_model_path_from_metadata(metadata, cache_path)
+            if model_path:
+                # Update metadata to use relative path
+                if "path" in metadata:
+                    metadata["path"] = str(model_dir / model_path.name)
                 
-                # Update to a relative path
-                artifact_info["path"] = filename
-            
-            # Update main model path to be relative
-            if "path" in metadata:
-                metadata["path"] = "model.pkl"
-            
-            # Save the updated metadata
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                # Update artifact paths
+                if "artifacts" in metadata:
+                    for artifact_info in metadata["artifacts"].values():
+                        if "path" in artifact_info:
+                            artifact_info["path"] = str(model_dir / Path(artifact_info["path"]).name)
+                
+                # Save updated metadata
+                with open(metadata_file, 'w') as f:
+                    json.dump(metadata, f, indent=2)
         
         print(f"📁 Serving model {model_id} from cache via {temp_dir}")
         return temp_dir
@@ -229,42 +316,17 @@ class ModelCacheService:
         """
         # Copy from SDK temp directory to our cache
         sdk_model_path = sdk_dir / "models" / model_id
-        if not sdk_model_path.exists():
-            raise ValueError(f"Model {model_id} not found in SDK directory: {sdk_model_path}")
-            
-        cache_path = self._get_model_cache_path(model_id)
         
-        # Ensure parent directories exist
+        # Verify source exists
+        if not sdk_model_path.exists():
+            raise ValueError(f"Model {model_id} not found in SDK directory")
+        
+        # Get cache path and ensure parent exists
+        cache_path = self._get_model_cache_path(model_id)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         
-        if cache_path.exists():
-            shutil.rmtree(cache_path)
-        
-        # Copy the model files
+        # Copy model files to cache
         shutil.copytree(sdk_model_path, cache_path, dirs_exist_ok=True)
-        
-        # Fix the metadata paths to point to the cache directory
-        metadata_file = cache_path / "metadata.json"
-        if metadata_file.exists():
-            with open(metadata_file, 'r') as f:
-                metadata = json.load(f)
-            
-            # Update artifact paths to be relative to the model directory
-            for artifact_name, artifact_info in metadata.get("artifacts", {}).items():
-                # Get the filename from the original path
-                original_path = Path(artifact_info["path"])
-                filename = original_path.name
-                
-                # Update to a relative path
-                artifact_info["path"] = filename
-            
-            # Update main model path to be relative
-            if "path" in metadata:
-                metadata["path"] = "model.pkl"
-            
-            # Save the updated metadata
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2)
         
         # Update cache metadata
         self.cache_metadata[model_id] = {
@@ -281,59 +343,86 @@ class ModelCacheService:
         print(f"💾 Cached model {model_id} locally")
         return cache_path
     
+    def delete_model(self, model_id: str) -> bool:
+        """Delete a model from cache and optionally S3."""
+        cache_path = self._get_model_cache_path(model_id)
+        
+        # Remove from cache
+        if cache_path.exists():
+            shutil.rmtree(cache_path)
+        
+        # Remove from cache metadata
+        if model_id in self.cache_metadata:
+            del self.cache_metadata[model_id]
+            self._save_cache_metadata()
+        
+        # Remove from S3 if configured
+        if settings.STORAGE_TYPE == "s3" and self.s3_client:
+            try:
+                # List and delete all objects with model_id prefix
+                response = self.s3_client.list_objects_v2(
+                    Bucket=settings.S3_BUCKET,
+                    Prefix=f"models/{model_id}/"
+                )
+                
+                for obj in response.get("Contents", []):
+                    self.s3_client.delete_object(
+                        Bucket=settings.S3_BUCKET,
+                        Key=obj["Key"]
+                    )
+                    
+            except Exception as e:
+                print(f"⚠️ Warning: Failed to delete model {model_id} from S3: {str(e)}")
+        
+        return True
+    
     def cleanup_old_cache(self, max_age_days: int = 7, max_size_gb: float = 10.0):
-        """
-        Clean up old cached models to manage disk space.
-        
-        Args:
-            max_age_days: Remove models older than this
-            max_size_gb: If cache exceeds this size, remove least recently used
-        """
-        cutoff_date = datetime.now() - timedelta(days=max_age_days)
-        
-        # Remove old models
-        for model_id, metadata in list(self.cache_metadata.items()):
-            last_accessed = datetime.fromisoformat(metadata["last_accessed"])
-            if last_accessed < cutoff_date:
-                cache_path = self._get_model_cache_path(model_id)
-                if cache_path.exists():
-                    shutil.rmtree(cache_path)
-                del self.cache_metadata[model_id]
-                print(f"🗑️ Removed old cached model: {model_id}")
-        
-        # Check total cache size
-        total_size_bytes = sum(m["size_bytes"] for m in self.cache_metadata.values())
+        """Clean up old or oversized cache entries."""
+        # Convert max size to bytes
         max_size_bytes = max_size_gb * 1024 * 1024 * 1024
         
-        if total_size_bytes > max_size_bytes:
-            # Remove least recently used models
-            sorted_models = sorted(
-                self.cache_metadata.items(),
-                key=lambda x: x[1]["last_accessed"]
-            )
-            
-            for model_id, metadata in sorted_models:
-                cache_path = self._get_model_cache_path(model_id)
-                if cache_path.exists():
-                    shutil.rmtree(cache_path)
-                total_size_bytes -= metadata["size_bytes"]
-                del self.cache_metadata[model_id]
-                print(f"🗑️ Removed LRU cached model: {model_id}")
-                
-                if total_size_bytes <= max_size_bytes:
-                    break
+        # Get current cache size
+        total_size = 0
+        for model_id in list(self.cache_metadata.keys()):
+            total_size += self.cache_metadata[model_id].get("size_bytes", 0)
         
-        self._save_cache_metadata()
+        # Sort models by last access time
+        models_by_access = sorted(
+            self.cache_metadata.items(),
+            key=lambda x: datetime.fromisoformat(x[1]["last_accessed"])
+        )
+        
+        # Remove old models
+        cutoff_date = datetime.now() - timedelta(days=max_age_days)
+        
+        for model_id, metadata in models_by_access:
+            should_delete = False
+            
+            # Check age - if max_age_days is 0, all models are considered old
+            if max_age_days == 0:
+                should_delete = True
+            else:
+                last_accessed = datetime.fromisoformat(metadata["last_accessed"])
+                if last_accessed < cutoff_date:
+                    should_delete = True
+            
+            # Check size limit
+            if total_size > max_size_bytes:
+                should_delete = True
+            
+            # Delete if either condition is met
+            if should_delete:
+                size = metadata.get("size_bytes", 0)
+                self.delete_model(model_id)
+                total_size -= size
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
-        total_models = len(self.cache_metadata)
-        total_size_bytes = sum(m["size_bytes"] for m in self.cache_metadata.values())
-        total_size_mb = total_size_bytes / (1024 * 1024)
+        total_size = 0
+        for metadata in self.cache_metadata.values():
+            total_size += metadata.get("size_bytes", 0)
         
         return {
-            "total_models": total_models,
-            "total_size_mb": round(total_size_mb, 2),
-            "cache_dir": str(self.cache_dir),
-            "storage_type": settings.STORAGE_TYPE
+            "total_models": len(self.cache_metadata),
+            "total_size_mb": total_size / (1024 * 1024)
         } 

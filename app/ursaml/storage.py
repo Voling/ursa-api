@@ -394,25 +394,72 @@ class UrsaMLStorage:
     # Model operations
     def save_model(self, model_data: bytes, model_id: str) -> str:
         """Save model binary data."""
-        model_path = self.models_path / f"{model_id}.pkl"
+        # Create model directory
+        model_dir = self.models_path / model_id
+        model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save model file
+        model_path = model_dir / "model"  # Let SDK determine extension
         with open(model_path, 'wb') as f:
             f.write(model_data)
+            
+        # Create metadata
+        metadata = {
+            "id": model_id,
+            "created_at": datetime.now().isoformat(),
+            "path": str(model_path),
+            "artifacts": {
+                "model": {
+                    "path": str(model_path),
+                    "type": "unknown"  # Let SDK determine type
+                }
+            }
+        }
+        
+        # Save metadata
+        with open(model_dir / "metadata.json", 'w') as f:
+            json.dump(metadata, f, indent=2)
+            
         return str(model_path)
     
     def get_model(self, model_id: str) -> Optional[bytes]:
         """Get model binary data."""
-        model_path = self.models_path / f"{model_id}.pkl"
-        if not model_path.exists():
+        model_dir = self.models_path / model_id
+        if not model_dir.exists():
             return None
-        
-        with open(model_path, 'rb') as f:
-            return f.read()
+            
+        # Read metadata to find model path
+        try:
+            with open(model_dir / "metadata.json", 'r') as f:
+                metadata = json.load(f)
+                
+            # Find model path
+            if "path" in metadata:
+                model_path = Path(metadata["path"])
+                if not model_path.exists():
+                    model_path = model_dir / model_path.name
+            elif "artifacts" in metadata and "model" in metadata["artifacts"]:
+                model_path = Path(metadata["artifacts"]["model"]["path"])
+                if not model_path.exists():
+                    model_path = model_dir / model_path.name
+            else:
+                return None
+                
+            if not model_path.exists():
+                return None
+                
+            with open(model_path, 'rb') as f:
+                return f.read()
+                
+        except Exception as e:
+            print(f"⚠️ Warning: Error reading model {model_id}: {str(e)}")
+            return None
     
     def delete_model(self, model_id: str) -> bool:
-        """Delete model file."""
-        model_path = self.models_path / f"{model_id}.pkl"
-        if model_path.exists():
-            model_path.unlink()
+        """Delete model directory and all its contents."""
+        model_dir = self.models_path / model_id
+        if model_dir.exists():
+            shutil.rmtree(model_dir)
             return True
         return False
     

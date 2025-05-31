@@ -2,7 +2,6 @@
 Test configuration and fixtures for ursa-api tests.
 """
 import pytest
-import tempfile
 from pathlib import Path
 from contextlib import contextmanager
 from fastapi.testclient import TestClient
@@ -11,7 +10,7 @@ import shutil
 
 from app.main import app
 from app.ursaml import UrsaMLStorage
-from app.config import Settings
+from app.config import Settings, REPO_ROOT
 from app.services.model_cache_service import ModelCacheService
 
 
@@ -19,31 +18,52 @@ from app.services.model_cache_service import ModelCacheService
 def test_settings():
     """Override settings for testing."""
     with patch("app.config.settings") as mock_settings:
-        # Create a temporary test settings
+        # Create test settings using repository storage
         test_settings = Settings(
             STORAGE_TYPE="filesystem",
-            MODEL_STORAGE_DIR=tempfile.mkdtemp(),
-            URSAML_STORAGE_DIR=tempfile.mkdtemp()
+            MODEL_STORAGE_DIR=str(REPO_ROOT / "storage" / "models"),
+            URSAML_STORAGE_DIR=str(REPO_ROOT / "storage" / "ursaml")
         )
         
         # Update the mock to use our test settings
-        for key, value in test_settings.dict().items():
+        for key, value in test_settings.model_dump().items():
             setattr(mock_settings, key, value)
+        
+        # Ensure storage directories exist
+        Path(test_settings.MODEL_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
+        Path(test_settings.URSAML_STORAGE_DIR).mkdir(parents=True, exist_ok=True)
         
         yield test_settings
         
-        # Cleanup temp directories
-        shutil.rmtree(test_settings.MODEL_STORAGE_DIR, ignore_errors=True)
-        shutil.rmtree(test_settings.URSAML_STORAGE_DIR, ignore_errors=True)
+        # Clean storage directories but keep structure
+        for item in Path(test_settings.MODEL_STORAGE_DIR).glob("*"):
+            if item.name != ".gitkeep":
+                if item.is_file():
+                    item.unlink()
+                else:
+                    shutil.rmtree(item)
+        
+        for item in Path(test_settings.URSAML_STORAGE_DIR).glob("*"):
+            if item.name != ".gitkeep":
+                if item.is_file():
+                    item.unlink()
+                else:
+                    shutil.rmtree(item)
 
 
 @pytest.fixture
 def test_storage_dir():
-    """Create a temporary directory for test storage."""
-    temp_dir = tempfile.mkdtemp()
-    yield temp_dir
-    # Cleanup after test
-    shutil.rmtree(temp_dir)
+    """Create a storage directory for testing."""
+    storage_dir = REPO_ROOT / "storage" / "ursaml"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    yield str(storage_dir)
+    # Clean directory but keep structure
+    for item in storage_dir.glob("*"):
+        if item.name != ".gitkeep":
+            if item.is_file():
+                item.unlink()
+            else:
+                shutil.rmtree(item)
 
 
 @pytest.fixture
@@ -102,20 +122,18 @@ def base64_model():
 
 
 @pytest.fixture(scope="function")
-def temp_cache_dir():
-    """Create a temporary directory for cache testing."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        yield Path(temp_dir)
-
-
-@pytest.fixture(scope="function")
 def test_cache_service(test_settings):
-    """Create a test cache service with temporary directory."""
+    """Create a test cache service."""
     service = ModelCacheService()
     
     # Clean up any existing cache
     if service.cache_dir.exists():
-        shutil.rmtree(service.cache_dir)
+        for item in service.cache_dir.glob("*"):
+            if item.name != ".gitkeep":
+                if item.is_file():
+                    item.unlink()
+                else:
+                    shutil.rmtree(item)
     service.cache_dir.mkdir(parents=True, exist_ok=True)
     
     # Reset cache metadata
@@ -124,9 +142,13 @@ def test_cache_service(test_settings):
     
     yield service
     
-    # Cleanup after test
-    if service.cache_dir.exists():
-        shutil.rmtree(service.cache_dir)
+    # Clean up but keep structure
+    for item in service.cache_dir.glob("*"):
+        if item.name != ".gitkeep":
+            if item.is_file():
+                item.unlink()
+            else:
+                shutil.rmtree(item)
 
 
 @pytest.fixture

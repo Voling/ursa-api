@@ -3,13 +3,14 @@ Tests for ModelCacheService.
 """
 import json
 import shutil
-import tempfile
+import uuid
 from pathlib import Path
 from unittest.mock import patch, Mock
 import pytest
 
 from app.services.model_cache_service import ModelCacheService
 from ursakit.client import UrsaClient
+from app.config import settings, REPO_ROOT
 
 
 class TestModelCacheService:
@@ -38,76 +39,73 @@ class TestModelCacheService:
         """Test that is_model_cached returns True for cached models."""
         model, X, y = sample_sklearn_model
         
-        # Save a model using SDK first
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            
-            # Cache the model
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
-            
-            # Check if it's cached
-            assert test_cache_service._is_model_cached(model_id)
+        # Save a model using SDK
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        
+        # Cache the model
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
+        
+        # Check if it's cached
+        assert test_cache_service._is_model_cached(model_id)
     
     def test_save_model_from_sdk(self, test_cache_service, sample_sklearn_model):
         """Test saving a model from SDK to cache."""
         model, X, y = sample_sklearn_model
         
-        # Save model using SDK first
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            
-            # Cache the model
-            cache_path = test_cache_service.save_model_from_sdk(model_id, temp_path)
-            
-            # Verify cache structure
-            assert cache_path.exists()
-            assert (cache_path / "metadata.json").exists()
-            
-            # Verify metadata was updated
-            assert model_id in test_cache_service.cache_metadata
-            assert "cached_at" in test_cache_service.cache_metadata[model_id]
-            assert "size_bytes" in test_cache_service.cache_metadata[model_id]
+        # Save model using SDK
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        
+        # Cache the model
+        cache_path = test_cache_service.save_model_from_sdk(model_id, sdk_dir)
+        
+        # Verify cache structure
+        assert cache_path.exists()
+        assert (cache_path / "metadata.json").exists()
+        
+        # Verify metadata was updated
+        assert model_id in test_cache_service.cache_metadata
+        assert "cached_at" in test_cache_service.cache_metadata[model_id]
+        assert "size_bytes" in test_cache_service.cache_metadata[model_id]
     
     def test_get_model_for_sdk_from_cache(self, test_cache_service, sample_sklearn_model):
         """Test retrieving a cached model for SDK use."""
         model, X, y = sample_sklearn_model
         
-        # Save and cache model first
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
-            
-            # Verify the model was cached
-            assert test_cache_service._is_model_cached(model_id)
-            
-            # Get model from cache
-            cache_dir = test_cache_service.get_model_for_sdk(model_id)
-            
-            # Verify the returned path exists
-            assert cache_dir.exists()
-            
-            # Verify the models subdirectory exists with our model
-            models_dir = cache_dir / "models" / model_id
-            assert models_dir.exists()
-            assert (models_dir / "metadata.json").exists()
-            
-            # Verify we can load the model using SDK from cache
-            sdk_client = UrsaClient(dir=cache_dir, use_server=False)
-            loaded_model = sdk_client.load(model_id)
-            
-            # Test that the loaded model works
-            predictions = loaded_model.predict(X[:5])
-            assert predictions is not None
-            assert len(predictions) == 5
+        # Save and cache model
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
+        
+        # Verify the model was cached
+        assert test_cache_service._is_model_cached(model_id)
+        
+        # Get model from cache
+        cache_dir = test_cache_service.get_model_for_sdk(model_id)
+        
+        # Verify the returned path exists
+        assert cache_dir.exists()
+        
+        # Verify the models subdirectory exists with our model
+        models_dir = cache_dir / "models" / model_id
+        assert models_dir.exists()
+        assert (models_dir / "metadata.json").exists()
+        
+        # Verify we can load the model using SDK from cache
+        sdk_client = UrsaClient(dir=cache_dir, use_server=False)
+        loaded_model = sdk_client.load(model_id)
+        
+        # Test that the loaded model works
+        predictions = loaded_model.predict(X[:5])
+        assert predictions is not None
+        assert len(predictions) == 5
     
     def test_get_model_for_sdk_not_found(self, test_cache_service):
         """Test that get_model_for_sdk raises error for non-existent models."""
@@ -119,12 +117,11 @@ class TestModelCacheService:
         model, X, y = sample_sklearn_model
         
         # Save a model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Create new cache service instance with same directory
         new_service = ModelCacheService()
@@ -140,12 +137,11 @@ class TestModelCacheService:
         model, X, y = sample_sklearn_model
         
         # Save a model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Artificially age the cache entry
         from datetime import datetime, timedelta
@@ -165,12 +161,11 @@ class TestModelCacheService:
         model, X, y = sample_sklearn_model
         
         # Save a model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Artificially set large size and old access time
         from datetime import datetime, timedelta
@@ -196,12 +191,11 @@ class TestModelCacheService:
         assert stats["total_size_mb"] == 0
         
         # Save a model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Check updated stats
         stats = test_cache_service.get_cache_stats()
@@ -213,88 +207,77 @@ class TestModelCacheService:
         model, X, y = sample_sklearn_model
         
         # Save a model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
-            
-            # Get model with force refresh
-            cache_dir = test_cache_service.get_model_for_sdk(model_id, force_refresh=True)
-            
-            # Should still work
-            assert cache_dir.exists()
-            assert (cache_dir / "models" / model_id).exists()
-            
-            # Load and test model
-            sdk_client = UrsaClient(dir=cache_dir, use_server=False)
-            loaded_model = sdk_client.load(model_id)
-            predictions = loaded_model.predict(X[:5])
-            assert predictions is not None
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
+        
+        # Get model with force refresh
+        cache_dir = test_cache_service.get_model_for_sdk(model_id, force_refresh=True)
+        
+        # Should still work
+        assert cache_dir.exists()
+        assert (cache_dir / "models" / model_id).exists()
+        
+        # Load and test model
+        sdk_client = UrsaClient(dir=cache_dir, use_server=False)
+        loaded_model = sdk_client.load(model_id)
+        predictions = loaded_model.predict(X[:5])
+        assert predictions is not None
     
     def test_cache_freshness_check(self, test_cache_service, sample_sklearn_model):
         """Test cache freshness checking."""
         model, X, y = sample_sklearn_model
         
         # Save a model
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            model_id = sdk_client.save(model, name="test_model")
-            test_cache_service.save_model_from_sdk(model_id, temp_path)
-            
-            # Should be fresh initially
-            assert test_cache_service._is_cache_fresh(model_id)
-            
-            # Make it stale
-            from datetime import datetime, timedelta
-            old_date = (datetime.now() - timedelta(days=2)).isoformat()
-            test_cache_service.cache_metadata[model_id]["cached_at"] = old_date
-            test_cache_service._save_cache_metadata()
-            
-            # Should be stale now
-            assert not test_cache_service._is_cache_fresh(model_id, max_age_hours=24)
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        model_id = sdk_client.save(model, name="test_model")
+        test_cache_service.save_model_from_sdk(model_id, sdk_dir)
+        
+        # Should be fresh initially
+        assert test_cache_service._is_cache_fresh(model_id)
     
     def test_multiple_model_types(self, test_cache_service, sample_sklearn_model, sample_torch_model):
         """Test caching different types of models."""
         sklearn_model, X_sklearn, y_sklearn = sample_sklearn_model
         torch_model, X_torch = sample_torch_model
         
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            sdk_client = UrsaClient(dir=temp_path, use_server=False)
-            
-            # Save both models
-            sklearn_id = sdk_client.save(sklearn_model, name="sklearn_test")
-            torch_id = sdk_client.save(torch_model, name="torch_test")
-            
-            # Cache both models
-            test_cache_service.save_model_from_sdk(sklearn_id, temp_path)
-            test_cache_service.save_model_from_sdk(torch_id, temp_path)
-            
-            # Both should be cached
-            assert test_cache_service._is_model_cached(sklearn_id)
-            assert test_cache_service._is_model_cached(torch_id)
-            
-            # Get both from cache
-            sklearn_dir = test_cache_service.get_model_for_sdk(sklearn_id)
-            torch_dir = test_cache_service.get_model_for_sdk(torch_id)
-            
-            # Load and test both models
-            sklearn_sdk = UrsaClient(dir=sklearn_dir, use_server=False)
-            torch_sdk = UrsaClient(dir=torch_dir, use_server=False)
-            
-            sklearn_loaded = sklearn_sdk.load(sklearn_id)
-            torch_loaded = torch_sdk.load(torch_id)
-            
-            # Test sklearn model
-            sklearn_pred = sklearn_loaded.predict(X_sklearn[:5])
-            assert sklearn_pred is not None
-            
-            # Test torch model
-            import torch
-            with torch.no_grad():
-                torch_output = torch_loaded(X_torch)
-                assert torch_output is not None 
+        # Save both models
+        sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        
+        # Save both models
+        sklearn_id = sdk_client.save(sklearn_model, name="sklearn_test")
+        torch_id = sdk_client.save(torch_model, name="torch_test")
+        
+        # Cache both models
+        test_cache_service.save_model_from_sdk(sklearn_id, sdk_dir)
+        test_cache_service.save_model_from_sdk(torch_id, sdk_dir)
+        
+        # Both should be cached
+        assert test_cache_service._is_model_cached(sklearn_id)
+        assert test_cache_service._is_model_cached(torch_id)
+        
+        # Get both from cache
+        sklearn_dir = test_cache_service.get_model_for_sdk(sklearn_id)
+        torch_dir = test_cache_service.get_model_for_sdk(torch_id)
+        
+        # Load and test both models
+        sklearn_sdk = UrsaClient(dir=sklearn_dir, use_server=False)
+        torch_sdk = UrsaClient(dir=torch_dir, use_server=False)
+        
+        sklearn_loaded = sklearn_sdk.load(sklearn_id)
+        torch_loaded = torch_sdk.load(torch_id)
+        
+        # Test sklearn model
+        sklearn_pred = sklearn_loaded.predict(X_sklearn[:5])
+        assert sklearn_pred is not None
+        
+        # Test torch model
+        import torch
+        with torch.no_grad():
+            torch_output = torch_loaded(X_torch)
+            assert torch_output is not None 
