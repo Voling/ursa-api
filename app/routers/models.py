@@ -1,7 +1,6 @@
 from fastapi import APIRouter, HTTPException, Path as FastAPIPath, Depends
 from app.schemas.api_schemas import ModelUpload, ModelResponse, ModelDetail
 from app.ursaml import UrsaMLStorage
-from app.services.model_cache_service import ModelCacheService
 from typing import Dict
 from datetime import datetime
 import base64
@@ -10,6 +9,8 @@ from pathlib import Path
 import pickle
 from app.config import settings, REPO_ROOT
 import json
+from app.dependencies import get_cache_manager
+from app.services.cache.cache_manager import ModelCacheManager
 
 router = APIRouter()
 
@@ -17,15 +18,11 @@ def get_storage():
     """Get UrsaML storage instance."""
     return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
 
-def get_cache_service():
-    """Get model cache service instance."""
-    return ModelCacheService()
-
 @router.post("/models/", response_model=ModelResponse, status_code=201)
 def save_model(
     model_data: ModelUpload,
     storage: UrsaMLStorage = Depends(get_storage),
-    cache_service: ModelCacheService = Depends(get_cache_service)
+    cache_service: ModelCacheManager = Depends(get_cache_manager)
 ):
     """
     Upload and save a serialized ML model.
@@ -125,7 +122,7 @@ def save_model(
 @router.get("/models/{model_id}", response_model=ModelDetail)
 def get_model(
     model_id: str = FastAPIPath(..., title="The ID of the model to retrieve"),
-    cache_service: ModelCacheService = Depends(get_cache_service)
+    cache_service: ModelCacheManager = Depends(get_cache_manager)
 ):
     """
     Get model metadata by ID.
@@ -135,7 +132,8 @@ def get_model(
         model_dir = cache_service.get_model_for_sdk(model_id)
         
         # Read metadata
-        with open(model_dir / "models" / model_id / "metadata.json", 'r') as f:
+        metadata_filename = "metadata.json"
+        with open(model_dir / "models" / model_id / metadata_filename, 'r') as f:
             metadata = json.load(f)
         
         return ModelDetail(
@@ -144,13 +142,13 @@ def get_model(
             model_type="unknown",  # Will be detected by SDK
             created_at=datetime.fromisoformat(metadata["created_at"])
         )
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
 
 @router.get("/models/{model_id}/data")
 def load_model_data(
     model_id: str = FastAPIPath(..., title="The ID of the model to load"),
-    cache_service: ModelCacheService = Depends(get_cache_service)
+    cache_service: ModelCacheManager = Depends(get_cache_manager)
 ):
     """
     Load model binary data by ID.
@@ -160,7 +158,7 @@ def load_model_data(
         model_dir = cache_service.get_model_for_sdk(model_id)
         
         # Read metadata to get model path
-        metadata_path = model_dir / "models" / model_id / "metadata.json"
+        metadata_path = model_dir / "models" / model_id / metadata_filename
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
         
@@ -186,13 +184,13 @@ def load_model_data(
             "framework": metadata.get("framework", "unknown"),
             "model_type": metadata.get("model_type", "unknown")
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=404, detail=f"Model not found: {model_id}")
 
 @router.delete("/models/{model_id}")
 def delete_model(
     model_id: str = FastAPIPath(..., title="The ID of the model to delete"),
-    cache_service: ModelCacheService = Depends(get_cache_service)
+    cache_service: ModelCacheManager = Depends(get_cache_manager)
 ):
     """
     Delete a model and its associated data.
@@ -204,5 +202,5 @@ def delete_model(
             raise HTTPException(status_code=500, detail="Failed to delete model")
         
         return {"success": True, "model_id": model_id}
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=404, detail=f"Model not found: {model_id}") 

@@ -5,9 +5,10 @@ from fastapi import APIRouter, Depends
 from typing import Dict, Any
 from datetime import datetime
 
-from app.services.model_cache_service import ModelCacheService
 from app.ursaml import UrsaMLStorage
 from app.config import settings
+from app.dependencies import get_cache_manager
+from app.services.cache.cache_manager import ModelCacheManager
 
 router = APIRouter()
 
@@ -16,8 +17,7 @@ def get_storage():
     return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
 
 def get_cache_service():
-    """Get model cache service instance."""
-    return ModelCacheService()
+    return get_cache_manager()
 
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
@@ -74,7 +74,7 @@ async def storage_health(
 
 @router.get("/health/cache")
 async def cache_health(
-    cache_service: ModelCacheService = Depends(get_cache_service)
+    cache_service: ModelCacheManager = Depends(get_cache_service)
 ) -> Dict[str, Any]:
     """
     Check model cache health.
@@ -85,11 +85,11 @@ async def cache_health(
         stats = cache_service.get_cache_stats()
         
         # Check cache directory structure
-        cache_dir = cache_service.cache_dir
+        cache_dir = cache_service.cache_root
         dirs_status = {
             "cache_root": cache_dir.exists(),
             "models": (cache_dir / "models").exists(),
-            "metadata": cache_service.cache_metadata_file.exists()
+            "metadata": cache_service.metadata_file.exists()
         }
         
         # Check S3 connectivity if configured
@@ -129,8 +129,8 @@ async def detailed_health(
     Detailed health check of all system components.
     """
     # Get component health
-    storage_health_check = await storage_health(storage)
-    cache_health_check = await cache_health(cache_service)
+    storage_health_check = await storage_health(storage)  # type: ignore[arg-type]
+    cache_health_check = await cache_health(cache_service)  # type: ignore[arg-type]
     basic_health = await health_check()
     
     # Determine overall status

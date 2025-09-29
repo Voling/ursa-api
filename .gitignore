@@ -1,6 +1,7 @@
 .vscode/
 models/
 data/
+.ursa/
 *.bin
 *.pkl
 *.pickle
