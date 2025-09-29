@@ -47,7 +47,7 @@ class S3Storage(ModelStorage):
                 # Another error occurred
                 raise
     
-    async def save_model(self, model_data: bytes, model_id: str) -> str:
+    def save_model(self, model_data: bytes, model_id: str) -> str:
         """
         Save model data to S3.
         
@@ -69,7 +69,7 @@ class S3Storage(ModelStorage):
         
         return f"s3://{self.bucket_name}/{s3_key}"
     
-    async def get_model(self, storage_path: str) -> bytes:
+    def get_model(self, storage_path: str) -> bytes:
         """
         Retrieve model data from S3.
         
@@ -99,7 +99,7 @@ class S3Storage(ModelStorage):
                 raise FileNotFoundError(f"Model not found at path: {storage_path}")
             raise
     
-    async def delete_model(self, storage_path: str) -> bool:
+    def delete_model(self, storage_path: str) -> bool:
         """
         Delete a model from S3.
         

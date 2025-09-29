@@ -1,5 +1,4 @@
 import os
-import aiofiles
 from typing import BinaryIO
 from app.storage.interface import ModelStorage
 
@@ -22,7 +21,7 @@ class FilesystemStorage(ModelStorage):
         self.base_dir = base_dir
         os.makedirs(self.base_dir, exist_ok=True)
     
-    async def save_model(self, model_data: bytes, model_id: str) -> str:
+    def save_model(self, model_data: bytes, model_id: str) -> str:
         """
         Save model data to the filesystem.
         
@@ -39,12 +38,12 @@ class FilesystemStorage(ModelStorage):
         
         # Save model file
         file_path = os.path.join(model_dir, "model.bin")
-        async with aiofiles.open(file_path, "wb") as f:
-            await f.write(model_data)
+        with open(file_path, "wb") as f:
+            f.write(model_data)
         
         return file_path
     
-    async def get_model(self, storage_path: str) -> bytes:
+    def get_model(self, storage_path: str) -> bytes:
         """
         Retrieve model data from the filesystem.
         
@@ -57,10 +56,10 @@ class FilesystemStorage(ModelStorage):
         if not os.path.exists(storage_path):
             raise FileNotFoundError(f"Model not found at path: {storage_path}")
         
-        async with aiofiles.open(storage_path, "rb") as f:
-            return await f.read()
+        with open(storage_path, "rb") as f:
+            return f.read()
     
-    async def delete_model(self, storage_path: str) -> bool:
+    def delete_model(self, storage_path: str) -> bool:
         """
         Delete a model from the filesystem.
         

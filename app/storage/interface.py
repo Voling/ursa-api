@@ -7,7 +7,7 @@ class ModelStorage(ABC):
     """
     
     @abstractmethod
-    async def save_model(self, model_data: bytes, model_id: str) -> str:
+    def save_model(self, model_data: bytes, model_id: str) -> str:
         """
         Save model data to storage and return the path.
         
@@ -21,7 +21,7 @@ class ModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def get_model(self, storage_path: str) -> bytes:
+    def get_model(self, storage_path: str) -> bytes:
         """
         Retrieve model data from storage.
         
@@ -34,7 +34,7 @@ class ModelStorage(ABC):
         pass
     
     @abstractmethod
-    async def delete_model(self, storage_path: str) -> bool:
+    def delete_model(self, storage_path: str) -> bool:
         """
         Delete a model from storage.
         

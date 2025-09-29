@@ -17,13 +17,13 @@ def get_storage() -> ModelStorage:
     
     if storage_type == "s3":
         # Get S3 configuration
-        bucket_name = settings.S3_BUCKET_NAME
+        bucket_name = settings.S3_BUCKET
         aws_access_key_id = settings.AWS_ACCESS_KEY_ID
         aws_secret_access_key = settings.AWS_SECRET_ACCESS_KEY
         region_name = settings.AWS_REGION
         
         if not bucket_name:
-            raise ValueError("S3_BUCKET_NAME must be set when using S3 storage")
+            raise ValueError("S3_BUCKET must be set when using S3 storage")
         
         return S3Storage(
             bucket_name=bucket_name,
