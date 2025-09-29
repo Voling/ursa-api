@@ -13,6 +13,10 @@ class CacheMetadataStore:
         self._metadata_file.parent.mkdir(parents=True, exist_ok=True)
         self._data: Dict[str, Dict[str, Any]] = self._load()
 
+    @property
+    def metadata_file(self) -> Path:
+        return self._metadata_file
+
     def _load(self) -> Dict[str, Dict[str, Any]]:
         if self._metadata_file.exists():
             try:

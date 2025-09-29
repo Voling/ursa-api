@@ -34,6 +34,15 @@ class ModelCacheManager:
         self._s3 = s3_gateway
         self._s3_enabled = s3_enabled
 
+    # Expose paths for diagnostics/health
+    @property
+    def cache_root(self) -> Path:
+        return self._local.cache_root
+
+    @property
+    def metadata_file(self) -> Path:
+        return self._meta.metadata_file
+
     # --------------- Internal helpers ---------------
     def _resolve_model_path_from_metadata(self, metadata: Dict[str, Any], base_dir: Path) -> Optional[Path]:
         return self._local.resolve_model_path(metadata, base_dir)
