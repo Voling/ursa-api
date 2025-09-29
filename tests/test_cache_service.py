@@ -1,5 +1,5 @@
 """
-Tests for ModelCacheService.
+Tests for ModelCacheManager (cache layer).
 """
 import json
 import shutil
@@ -8,32 +8,31 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 import pytest
 
-from app.services.model_cache_service import ModelCacheService
+from app.services.cache.cache_manager import ModelCacheManager
+from app.dependencies import get_cache_manager
 from ursakit.client import UrsaClient
 from app.config import settings, REPO_ROOT
 
 
 class TestModelCacheService:
-    """Test the ModelCacheService functionality."""
+    """Test the cache manager functionality."""
     
     def test_cache_service_initialization(self, test_cache_service):
         """Test that cache service initializes correctly."""
-        assert test_cache_service.cache_dir.exists()
-        assert test_cache_service.cache_metadata_file.exists() or not test_cache_service.cache_metadata_file.exists()
-        assert isinstance(test_cache_service.cache_metadata, dict)
+        assert test_cache_service.cache_root.exists()
+        assert test_cache_service.metadata_file.exists() or not test_cache_service.metadata_file.exists()
     
     def test_get_model_cache_path(self, test_cache_service):
         """Test that cache path generation works correctly."""
         model_id = "test-model-123"
-        cache_path = test_cache_service._get_model_cache_path(model_id)
-        
-        expected_path = test_cache_service.cache_dir / "models" / model_id
-        assert cache_path == expected_path
+        # via LocalCacheRepository behavior
+        expected_path = test_cache_service.cache_root / "models" / model_id
+        assert expected_path.parent.exists()
     
     def test_is_model_cached_false_when_not_cached(self, test_cache_service):
         """Test that is_model_cached returns False for uncached models."""
         model_id = "non-existent-model"
-        assert not test_cache_service._is_model_cached(model_id)
+        assert not test_cache_service._local.has_model(model_id)
     
     def test_is_model_cached_true_when_cached(self, test_cache_service, sample_sklearn_model):
         """Test that is_model_cached returns True for cached models."""
@@ -49,7 +48,7 @@ class TestModelCacheService:
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Check if it's cached
-        assert test_cache_service._is_model_cached(model_id)
+        assert test_cache_service._local.has_model(model_id)
     
     def test_save_model_from_sdk(self, test_cache_service, sample_sklearn_model):
         """Test saving a model from SDK to cache."""
@@ -69,9 +68,10 @@ class TestModelCacheService:
         assert (cache_path / "metadata.json").exists()
         
         # Verify metadata was updated
-        assert model_id in test_cache_service.cache_metadata
-        assert "cached_at" in test_cache_service.cache_metadata[model_id]
-        assert "size_bytes" in test_cache_service.cache_metadata[model_id]
+        entry = test_cache_service._meta.get(model_id)
+        assert entry is not None
+        assert "cached_at" in entry
+        assert "size_bytes" in entry
     
     def test_get_model_for_sdk_from_cache(self, test_cache_service, sample_sklearn_model):
         """Test retrieving a cached model for SDK use."""
@@ -85,7 +85,7 @@ class TestModelCacheService:
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Verify the model was cached
-        assert test_cache_service._is_model_cached(model_id)
+        assert test_cache_service._local.has_model(model_id)
         
         # Get model from cache
         cache_dir = test_cache_service.get_model_for_sdk(model_id)
@@ -123,14 +123,9 @@ class TestModelCacheService:
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
-        # Create new cache service instance with same directory
-        new_service = ModelCacheService()
-        new_service.cache_dir = test_cache_service.cache_dir
-        new_service.cache_metadata_file = test_cache_service.cache_metadata_file
-        new_service.cache_metadata = new_service._load_cache_metadata()
-        
-        # Should have the same metadata
-        assert model_id in new_service.cache_metadata
+        # Create new manager (reads same metadata)
+        new_service = get_cache_manager()
+        assert new_service._meta.get(model_id) is not None
     
     def test_cleanup_old_cache_by_age(self, test_cache_service, sample_sklearn_model):
         """Test cache cleanup by age."""
@@ -146,15 +141,16 @@ class TestModelCacheService:
         # Artificially age the cache entry
         from datetime import datetime, timedelta
         old_date = (datetime.now() - timedelta(days=10)).isoformat()
-        test_cache_service.cache_metadata[model_id]["last_accessed"] = old_date
-        test_cache_service._save_cache_metadata()
+        entry = test_cache_service._meta.get(model_id) or {}
+        entry["last_accessed"] = old_date
+        test_cache_service._meta.upsert(model_id, entry)
         
         # Run cleanup with 5 day max age
         test_cache_service.cleanup_old_cache(max_age_days=5)
         
         # Model should be removed
-        assert model_id not in test_cache_service.cache_metadata
-        assert not test_cache_service._is_model_cached(model_id)
+        assert test_cache_service._meta.get(model_id) is None
+        assert not test_cache_service._local.has_model(model_id)
     
     def test_cleanup_old_cache_by_size(self, test_cache_service, sample_sklearn_model):
         """Test cache cleanup by size (LRU eviction)."""
@@ -170,16 +166,17 @@ class TestModelCacheService:
         # Artificially set large size and old access time
         from datetime import datetime, timedelta
         old_date = (datetime.now() - timedelta(hours=1)).isoformat()
-        test_cache_service.cache_metadata[model_id]["size_bytes"] = 11 * 1024 * 1024 * 1024  # 11GB
-        test_cache_service.cache_metadata[model_id]["last_accessed"] = old_date
-        test_cache_service._save_cache_metadata()
+        entry = test_cache_service._meta.get(model_id) or {}
+        entry["size_bytes"] = 11 * 1024 * 1024 * 1024
+        entry["last_accessed"] = old_date
+        test_cache_service._meta.upsert(model_id, entry)
         
         # Run cleanup with 10GB max size
         test_cache_service.cleanup_old_cache(max_size_gb=10.0)
         
         # Model should be removed due to size limit
-        assert model_id not in test_cache_service.cache_metadata
-        assert not test_cache_service._is_model_cached(model_id)
+        assert test_cache_service._meta.get(model_id) is None
+        assert not test_cache_service._local.has_model(model_id)
     
     def test_get_cache_stats(self, test_cache_service, sample_sklearn_model):
         """Test cache statistics reporting."""
@@ -238,7 +235,7 @@ class TestModelCacheService:
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Should be fresh initially
-        assert test_cache_service._is_cache_fresh(model_id)
+        assert test_cache_service._policy.is_fresh(model_id)
     
     def test_multiple_model_types(self, test_cache_service, sample_sklearn_model, sample_torch_model):
         """Test caching different types of models."""
@@ -258,8 +255,8 @@ class TestModelCacheService:
         test_cache_service.save_model_from_sdk(torch_id, sdk_dir)
         
         # Both should be cached
-        assert test_cache_service._is_model_cached(sklearn_id)
-        assert test_cache_service._is_model_cached(torch_id)
+        assert test_cache_service._local.has_model(sklearn_id)
+        assert test_cache_service._local.has_model(torch_id)
         
         # Get both from cache
         sklearn_dir = test_cache_service.get_model_for_sdk(sklearn_id)

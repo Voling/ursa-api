@@ -7,7 +7,8 @@ from pathlib import Path
 from unittest.mock import patch, Mock
 import pytest
 
-from app.services.model_cache_service import ModelCacheService
+from app.services.cache.cache_manager import ModelCacheManager
+from app.dependencies import get_cache_manager
 from ursakit.client import UrsaClient
 from app.config import settings, REPO_ROOT
 
@@ -119,7 +120,7 @@ class TestCacheServiceIntegration:
         cache_path = test_cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Verify it's cached
-        assert test_cache_service._is_model_cached(model_id)
+        assert test_cache_service._local.has_model(model_id)
         
         # Retrieve from cache
         retrieved_cache_dir = test_cache_service.get_model_for_sdk(model_id)

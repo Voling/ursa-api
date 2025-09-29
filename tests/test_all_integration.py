@@ -7,7 +7,8 @@ import pickle
 from pathlib import Path
 import pytest
 
-from app.services.model_cache_service import ModelCacheService
+from app.services.cache.cache_manager import ModelCacheManager
+from app.dependencies import get_cache_manager
 from ursakit.client import UrsaClient
 from app.config import settings
 
@@ -20,7 +21,7 @@ class TestAllIntegration:
         model, X, y = sample_sklearn_model
         
         # Use the actual model storage directory
-        cache_service = ModelCacheService()
+        cache_service = get_cache_manager()
         
         # Step 1: Save model using SDK (simulating PWA → ursa-api → SDK)
         model_id = None
@@ -50,7 +51,7 @@ class TestAllIntegration:
                         print(f"Metadata content: {f.read()}")
         
         # Verify caching worked
-        assert cache_service._is_model_cached(model_id)
+        assert cache_service._local.has_model(model_id)
         assert cache_path.exists()
         assert (cache_path / "metadata.json").exists()
         
@@ -117,7 +118,7 @@ class TestAllIntegration:
         torch_model, X_torch = sample_torch_model
         
         # Use the actual model storage directory
-        cache_service = ModelCacheService()
+        cache_service = get_cache_manager()
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
         sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
         
@@ -130,8 +131,8 @@ class TestAllIntegration:
         cache_service.save_model_from_sdk(torch_id, sdk_dir)
         
         # Verify both are cached
-        assert cache_service._is_model_cached(sklearn_id)
-        assert cache_service._is_model_cached(torch_id)
+        assert cache_service._local.has_model(sklearn_id)
+        assert cache_service._local.has_model(torch_id)
         
         # Retrieve both from cache
         sklearn_cache_dir = cache_service.get_model_for_sdk(sklearn_id)
@@ -182,7 +183,7 @@ class TestAllIntegration:
         model, X, y = sample_sklearn_model
         
         # Use the actual model storage directory
-        cache_service = ModelCacheService()
+        cache_service = get_cache_manager()
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
         sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
         
@@ -191,13 +192,13 @@ class TestAllIntegration:
         cache_service.save_model_from_sdk(model_id, sdk_dir)
         
         # Verify model is cached
-        assert cache_service._is_model_cached(model_id)
+        assert cache_service._local.has_model(model_id)
         
         # Run cleanup with very restrictive settings
         cache_service.cleanup_old_cache(max_age_days=0, max_size_gb=0.001)
         
         # Model should be removed
-        assert not cache_service._is_model_cached(model_id)
+        assert not cache_service._local.has_model(model_id)
         
         # Cache stats should show 0 models
         stats = cache_service.get_cache_stats()

@@ -11,8 +11,19 @@ import shutil
 from app.main import app
 from app.ursaml import UrsaMLStorage
 from app.config import Settings, REPO_ROOT
-from app.services.model_cache_service import ModelCacheService
+from app.services.cache.cache_manager import ModelCacheManager
+from app.dependencies import get_cache_manager
 
+
+def clean_dir_keep_gitkeep(directory: Path) -> None:
+    """Remove all contents except .gitkeep within a directory."""
+    for item in directory.glob("*"):
+        if item.name == ".gitkeep":
+            continue
+        if item.is_file():
+            item.unlink()
+        else:
+            shutil.rmtree(item)
 
 @pytest.fixture(autouse=True)
 def test_settings():
@@ -36,19 +47,8 @@ def test_settings():
         yield test_settings
         
         # Clean storage directories but keep structure
-        for item in Path(test_settings.MODEL_STORAGE_DIR).glob("*"):
-            if item.name != ".gitkeep":
-                if item.is_file():
-                    item.unlink()
-                else:
-                    shutil.rmtree(item)
-        
-        for item in Path(test_settings.URSAML_STORAGE_DIR).glob("*"):
-            if item.name != ".gitkeep":
-                if item.is_file():
-                    item.unlink()
-                else:
-                    shutil.rmtree(item)
+        clean_dir_keep_gitkeep(Path(test_settings.MODEL_STORAGE_DIR))
+        clean_dir_keep_gitkeep(Path(test_settings.URSAML_STORAGE_DIR))
 
 
 @pytest.fixture
@@ -58,12 +58,7 @@ def test_storage_dir():
     storage_dir.mkdir(parents=True, exist_ok=True)
     yield str(storage_dir)
     # Clean directory but keep structure
-    for item in storage_dir.glob("*"):
-        if item.name != ".gitkeep":
-            if item.is_file():
-                item.unlink()
-            else:
-                shutil.rmtree(item)
+    clean_dir_keep_gitkeep(storage_dir)
 
 
 @pytest.fixture
@@ -123,32 +118,16 @@ def base64_model():
 
 @pytest.fixture(scope="function")
 def test_cache_service(test_settings):
-    """Create a test cache service."""
-    service = ModelCacheService()
-    
-    # Clean up any existing cache
-    if service.cache_dir.exists():
-        for item in service.cache_dir.glob("*"):
-            if item.name != ".gitkeep":
-                if item.is_file():
-                    item.unlink()
-                else:
-                    shutil.rmtree(item)
-    service.cache_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Reset cache metadata
-    service.cache_metadata = {}
-    service._save_cache_metadata()
-    
-    yield service
-    
-    # Clean up but keep structure
-    for item in service.cache_dir.glob("*"):
-        if item.name != ".gitkeep":
-            if item.is_file():
-                item.unlink()
-            else:
-                shutil.rmtree(item)
+    """Create a test cache manager."""
+    manager = get_cache_manager()
+    # Clean any existing cache root contents
+    cache_root = manager.cache_root
+    if cache_root.exists():
+        clean_dir_keep_gitkeep(cache_root)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    yield manager
+    # Cleanup after
+    clean_dir_keep_gitkeep(cache_root)
 
 
 @pytest.fixture
