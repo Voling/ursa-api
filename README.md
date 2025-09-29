@@ -29,7 +29,7 @@ Create a `.env` file with the following settings:
 
 ```
 # Database Configuration
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ursa
+DATABASE_URL=
 
 # Storage Configuration
 # Options: "s3" or "filesystem"
