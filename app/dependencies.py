@@ -11,6 +11,7 @@ from app.services.cache.s3_gateway import ModelS3Gateway, NullModelS3Gateway
 from app.services.cache.sdk_workspace import SDKWorkspaceManager
 from app.services.cache.cache_policy import CachePolicy
 from app.ursaml.storage import UrsaMLStorage
+from app.services.model_app_service import ModelAppService
 
 
 def get_cache_manager() -> ModelCacheManager:
@@ -46,5 +47,9 @@ def get_cache_manager() -> ModelCacheManager:
 
 def get_ursaml_storage() -> UrsaMLStorage:
     return UrsaMLStorage(base_path=str(settings.URSAML_STORAGE_DIR))
+
+
+def get_model_app_service() -> ModelAppService:
+    return ModelAppService(storage=get_ursaml_storage(), cache=get_cache_manager())
 
 

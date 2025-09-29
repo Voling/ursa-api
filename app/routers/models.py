@@ -9,9 +9,9 @@ from pathlib import Path
 import pickle
 from app.config import settings, REPO_ROOT
 import json
-from app.dependencies import get_cache_manager
+from app.dependencies import get_cache_manager, get_ursaml_storage, get_model_app_service
 from app.services.cache.cache_manager import ModelCacheManager
-from app.dependencies import get_ursaml_storage
+from app.services.model_app_service import ModelAppService
 
 router = APIRouter()
 
@@ -21,99 +21,28 @@ def get_storage():
 @router.post("/models/", response_model=ModelResponse, status_code=201)
 def save_model(
     model_data: ModelUpload,
-    storage: UrsaMLStorage = Depends(get_storage),
-    cache_service: ModelCacheManager = Depends(get_cache_manager)
+    service: ModelAppService = Depends(get_model_app_service)
 ):
     """
     Upload and save a serialized ML model.
     """
     try:
-        # Validate input data
-        if not model_data.file:
-            raise HTTPException(status_code=400, detail="Model file data is required")
-        
-        if not model_data.graph_id:
-            raise HTTPException(status_code=400, detail="Graph ID is required")
-        
-        # Validate base64 encoding
-        try:
-            model_bytes = base64.b64decode(model_data.file)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid base64 model data")
-        
-        # Validate graph exists
-        graph = storage.get_graph(model_data.graph_id)
-        if not graph:
-            raise HTTPException(status_code=404, detail=f"Graph not found: {model_data.graph_id}")
-        
-        # Generate model ID and name
-        model_id = str(uuid.uuid4())
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        model_name = f"model_{timestamp}"
-        
-        # Use repository storage for the model
-        sdk_dir = REPO_ROOT / "storage" / "models"
-        sdk_dir.mkdir(parents=True, exist_ok=True)
-        models_dir = sdk_dir / "models"
-        models_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Save model file
-        model_dir = models_dir / model_id
-        model_dir.mkdir(parents=True)
-        
-        # Save model metadata
-        metadata = {
-            "id": model_id,
-            "name": model_name,
-            "created_at": datetime.now().isoformat(),
-            "framework": "unknown",  # Will be detected by SDK
-            "model_type": "unknown",  # Will be detected by SDK
-            "artifacts": {
-                "model": {
-                    "path": str(model_dir / "model"),  # Let SDK determine extension
-                    "type": "unknown"  # Let SDK determine type
-                }
-            },
-            "serializer": "unknown",  # Let SDK determine serializer
-            "path": str(model_dir / "model"),  # Let SDK determine extension
-            "metadata": {}
-        }
-        
-        with open(model_dir / "metadata.json", 'w') as f:
-            json.dump(metadata, f, indent=2)
-        
-        # Save model file
-        model_file = model_dir / "model"  # Let SDK determine extension
-        with open(model_file, 'wb') as f:
-            f.write(model_bytes)
-        
-        # Cache the model
-        cache_service.save_model_from_sdk(model_id, sdk_dir)
-        
-        # Create node for the model
-        node = storage.create_node(
-            graph_id=model_data.graph_id,
-            name=model_name,
-            model_id=model_id
-        )
-        
-        if not node:
-            # Cleanup the model if node creation fails
-            cache_service.delete_model(model_id)
-            raise HTTPException(status_code=500, detail="Failed to create node for model")
-        
-        # Return response with complete model information
+        result = service.upload_model(model_data.file, model_data.graph_id)
         return ModelResponse(
-            model_id=model_id,
-            node_id=node["id"],
-            name=model_name,
+            model_id=result["model_id"],
+            node_id=result["node_id"],
+            name=result["name"],
             statistics={
-                "framework": "unknown",  # Will be detected by SDK
-                "model_type": "unknown",  # Will be detected by SDK
-                "created_at": metadata["created_at"],
+                "framework": "unknown",
+                "model_type": "unknown",
+                "created_at": result["created_at"],
                 "storage_type": "file"
             }
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
@@ -158,6 +87,7 @@ def load_model_data(
         model_dir = cache_service.get_model_for_sdk(model_id)
         
         # Read metadata to get model path
+        metadata_filename = "metadata.json"
         metadata_path = model_dir / "models" / model_id / metadata_filename
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
