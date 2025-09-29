@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Path, Depends
 from app.schemas.api_schemas import NodeUpdate, NodeResponse, GraphStructure, Node as NodeSchema, Edge
 from app.ursaml import UrsaMLStorage
+from app.dependencies import get_ursaml_storage
 from app.config import settings
 from typing import List
 
 router = APIRouter()
 
 def get_storage():
-    """Get UrsaML storage instance."""
-    return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
+    return get_ursaml_storage()
 
 @router.delete("/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}")
 def delete_node(

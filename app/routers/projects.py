@@ -1,14 +1,14 @@
 from fastapi import APIRouter, HTTPException, Path, Depends
 from app.schemas.api_schemas import ProjectCreate, ProjectResponse, ProjectDetail, ProjectDeleteResponse
 from app.ursaml import UrsaMLStorage
+from app.dependencies import get_ursaml_storage
 from typing import List
 from app.config import settings
 
 router = APIRouter()
 
 def get_storage():
-    """Get UrsaML storage instance."""
-    return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
+    return get_ursaml_storage()
 
 @router.post("/projects/", response_model=ProjectResponse, status_code=201)
 def create_project(project_data: ProjectCreate, storage: UrsaMLStorage = Depends(get_storage)):

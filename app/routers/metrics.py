@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Path, Depends
 from app.schemas.api_schemas import MetricsUpload, MetricsResponse, AllNodeMetricsResponse
 from app.ursaml import UrsaMLStorage
+from app.dependencies import get_ursaml_storage
 from typing import Dict, Any, Optional
 import json
 from app.config import settings
@@ -8,8 +9,7 @@ from app.config import settings
 router = APIRouter()
 
 def get_storage():
-    """Get UrsaML storage instance."""
-    return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
+    return get_ursaml_storage()
 
 @router.post("/metrics/", response_model=MetricsResponse)
 def log_metrics(metrics_data: MetricsUpload, storage: UrsaMLStorage = Depends(get_storage)):
