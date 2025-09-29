@@ -11,12 +11,12 @@ from app.config import settings, REPO_ROOT
 import json
 from app.dependencies import get_cache_manager
 from app.services.cache.cache_manager import ModelCacheManager
+from app.dependencies import get_ursaml_storage
 
 router = APIRouter()
 
 def get_storage():
-    """Get UrsaML storage instance."""
-    return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
+    return get_ursaml_storage()
 
 @router.post("/models/", response_model=ModelResponse, status_code=201)
 def save_model(

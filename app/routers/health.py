@@ -7,14 +7,13 @@ from datetime import datetime
 
 from app.ursaml import UrsaMLStorage
 from app.config import settings
-from app.dependencies import get_cache_manager
+from app.dependencies import get_cache_manager, get_ursaml_storage
 from app.services.cache.cache_manager import ModelCacheManager
 
 router = APIRouter()
 
 def get_storage():
-    """Get UrsaML storage instance."""
-    return UrsaMLStorage(base_path=settings.URSAML_STORAGE_DIR)
+    return get_ursaml_storage()
 
 def get_cache_service():
     return get_cache_manager()
