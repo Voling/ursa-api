@@ -26,7 +26,7 @@ class TestAllIntegration:
         # Step 1: Save model using SDK (simulating PWA → ursa-api → SDK)
         model_id = None
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="integration_test")
         print(f"Model saved with ID: {model_id}")
@@ -120,7 +120,7 @@ class TestAllIntegration:
         # Use the actual model storage directory
         cache_service = get_cache_manager()
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         # Save both models
         sklearn_id = sdk_client.save(sklearn_model, name="sklearn_test")
@@ -185,7 +185,7 @@ class TestAllIntegration:
         # Use the actual model storage directory
         cache_service = get_cache_manager()
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         # Save a model
         model_id = sdk_client.save(model, name="cleanup_test")

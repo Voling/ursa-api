@@ -70,7 +70,7 @@ class TestModelsWithCache:
         
         # Create a model in the repository storage
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         # Save model using SDK
         actual_model_id = sdk_client.save(model, name="test_model")
@@ -112,7 +112,7 @@ class TestCacheServiceIntegration:
         
         # Save model using SDK
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="integration_test")
         
@@ -141,7 +141,7 @@ class TestCacheServiceIntegration:
         
         # Save and cache model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="performance_test")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -175,7 +175,7 @@ class TestCacheServiceIntegration:
         
         # Save both models
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         # Save both models
         sklearn_id = sdk_client.save(sklearn_model, name="sklearn_cache_test")
@@ -223,7 +223,7 @@ class TestCacheServiceIntegration:
         
         # Save and cache a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="cleanup_test")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)

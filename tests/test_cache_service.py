@@ -40,7 +40,7 @@ class TestModelCacheService:
         
         # Save a model using SDK
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         
@@ -56,7 +56,7 @@ class TestModelCacheService:
         
         # Save model using SDK
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         
@@ -79,7 +79,7 @@ class TestModelCacheService:
         
         # Save and cache model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -99,7 +99,7 @@ class TestModelCacheService:
         assert (models_dir / "metadata.json").exists()
         
         # Verify we can load the model using SDK from cache
-        sdk_client = UrsaClient(dir=cache_dir, use_server=False)
+        sdk_client = UrsaClient(dir=cache_dir)
         loaded_model = sdk_client.load(model_id)
         
         # Test that the loaded model works
@@ -118,7 +118,7 @@ class TestModelCacheService:
         
         # Save a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -133,7 +133,7 @@ class TestModelCacheService:
         
         # Save a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -158,7 +158,7 @@ class TestModelCacheService:
         
         # Save a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -189,7 +189,7 @@ class TestModelCacheService:
         
         # Save a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -205,7 +205,7 @@ class TestModelCacheService:
         
         # Save a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -218,7 +218,7 @@ class TestModelCacheService:
         assert (cache_dir / "models" / model_id).exists()
         
         # Load and test model
-        sdk_client = UrsaClient(dir=cache_dir, use_server=False)
+        sdk_client = UrsaClient(dir=cache_dir)
         loaded_model = sdk_client.load(model_id)
         predictions = loaded_model.predict(X[:5])
         assert predictions is not None
@@ -229,7 +229,7 @@ class TestModelCacheService:
         
         # Save a model
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         model_id = sdk_client.save(model, name="test_model")
         test_cache_service.save_model_from_sdk(model_id, sdk_dir)
@@ -244,7 +244,7 @@ class TestModelCacheService:
         
         # Save both models
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        sdk_client = UrsaClient(dir=sdk_dir, use_server=False)
+        sdk_client = UrsaClient(dir=sdk_dir)
         
         # Save both models
         sklearn_id = sdk_client.save(sklearn_model, name="sklearn_test")
@@ -263,8 +263,8 @@ class TestModelCacheService:
         torch_dir = test_cache_service.get_model_for_sdk(torch_id)
         
         # Load and test both models
-        sklearn_sdk = UrsaClient(dir=sklearn_dir, use_server=False)
-        torch_sdk = UrsaClient(dir=torch_dir, use_server=False)
+        sklearn_sdk = UrsaClient(dir=sklearn_dir)
+        torch_sdk = UrsaClient(dir=torch_dir)
         
         sklearn_loaded = sklearn_sdk.load(sklearn_id)
         torch_loaded = torch_sdk.load(torch_id)

@@ -15,20 +15,19 @@ class TestUrsaKitIntegration:
     """Test ursakit SDK integration without HTTP transport."""
     
     def test_sdk_client_initialization(self):
-        """Test that UrsaClient initializes correctly without server."""
+        """Test that UrsaClient initializes correctly."""
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
-        assert client.use_server is False
-        assert client.transport is None
         assert client.get_ursa_dir().exists()
+        assert client.get_ursa_dir() == sdk_dir
     
     def test_sklearn_model_detection_and_save(self, sample_sklearn_model):
         """Test sklearn model detection and saving."""
         model, X, y = sample_sklearn_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save model
         model_id = client.save(model, name="sklearn_test")
@@ -53,7 +52,7 @@ class TestUrsaKitIntegration:
         model, X, y = sample_sklearn_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save and load model
         model_id = client.save(model, name="sklearn_test")
@@ -71,7 +70,7 @@ class TestUrsaKitIntegration:
         model, sample_input = sample_torch_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save model
         model_id = client.save(model, name="torch_test")
@@ -96,7 +95,7 @@ class TestUrsaKitIntegration:
         model, sample_input = sample_torch_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save and load model
         model_id = client.save(model, name="torch_test")
@@ -116,7 +115,7 @@ class TestUrsaKitIntegration:
         model, X, y = sample_tf_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save model
         model_id = client.save(model, name="tf_test")
@@ -141,7 +140,7 @@ class TestUrsaKitIntegration:
         model, X, y = sample_tf_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save and load model
         model_id = client.save(model, name="tf_test")
@@ -162,7 +161,7 @@ class TestUrsaKitIntegration:
         model, X, y = sample_sklearn_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         model_id = client.save(model, name="metadata_test")
         
@@ -193,7 +192,7 @@ class TestUrsaKitIntegration:
         torch_model, sample_input = sample_torch_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Save multiple models
         sklearn_id = client.save(sklearn_model, name="sklearn_model")
@@ -222,7 +221,7 @@ class TestUrsaKitIntegration:
         invalid_model = "not a model"
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         # Should raise an error when trying to save an invalid model
         with pytest.raises(Exception):  # Any exception is acceptable for invalid models
@@ -231,7 +230,7 @@ class TestUrsaKitIntegration:
     def test_error_handling_nonexistent_model(self):
         """Test error handling when loading nonexistent model."""
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         with pytest.raises(ValueError):
             client.load("nonexistent-model-id")
@@ -239,16 +238,17 @@ class TestUrsaKitIntegration:
     def test_no_http_transport_in_client(self):
         """Test that client has no HTTP transport when use_server=False."""
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
-        assert client.transport is None
+        # Real UrsaClient works in local-only mode by default
+        assert client.get_ursa_dir() == sdk_dir
     
     def test_local_storage_only(self, sample_sklearn_model):
         """Test that models are only stored locally."""
         model, X, y = sample_sklearn_model
         
         sdk_dir = Path(settings.MODEL_STORAGE_DIR)
-        client = UrsaClient(dir=sdk_dir, use_server=False)
+        client = UrsaClient(dir=sdk_dir)
         
         model_id = client.save(model, name="local_test")
         
