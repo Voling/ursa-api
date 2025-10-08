@@ -16,3 +16,5 @@ uvicorn==0.34.2
 # Storage
 boto3==1.34.86
 python-dotenv==1.0.1
+# Ursa sdk
+ursakit
