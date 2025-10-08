@@ -12,6 +12,11 @@ from app.services.cache.sdk_workspace import SDKWorkspaceManager
 from app.services.cache.cache_policy import CachePolicy
 from app.ursaml.storage import UrsaMLStorage
 from app.services.model_app_service import ModelAppService
+from app.application.graph_access_service import GraphAccessService
+from app.application.metrics_service import MetricsService
+from app.application.project_validation_service import ProjectValidationService
+from app.application.graph_validation_service import GraphValidationService
+from app.infrastructure.model_ingestion_adapter import ModelIngestionAdapter
 
 
 def get_cache_manager() -> ModelCacheManager:
@@ -50,6 +55,25 @@ def get_ursaml_storage() -> UrsaMLStorage:
 
 
 def get_model_app_service() -> ModelAppService:
-    return ModelAppService(storage=get_ursaml_storage(), cache=get_cache_manager())
+    sdk_dir = Path(settings.MODEL_STORAGE_DIR)
+    return ModelAppService(
+        storage=get_ursaml_storage(),
+        cache=get_cache_manager(),
+        ingestion=ModelIngestionAdapter(sdk_dir=sdk_dir, framework="pickle"),
+    )
 
 
+def get_graph_access_service() -> GraphAccessService:
+    return GraphAccessService(storage=get_ursaml_storage())
+
+
+def get_metrics_service() -> MetricsService:
+    return MetricsService(storage=get_ursaml_storage())
+
+
+def get_project_validation_service() -> ProjectValidationService:
+    return ProjectValidationService(storage=get_ursaml_storage())
+
+
+def get_graph_validation_service() -> GraphValidationService:
+    return GraphValidationService(storage=get_ursaml_storage())
