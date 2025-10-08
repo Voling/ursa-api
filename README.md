@@ -1,6 +1,6 @@
 # Ursa API
 
-FastAPI implementation of the Ursa API for machine learning model management and knowledge graph operations.
+FastAPI implementation of the Ursa API for machine learning model management and knowledge graph operations. An application of the Ursa SDK, hostable on local networks to manage shared model lifecycles.
 
 ## Overview
 
