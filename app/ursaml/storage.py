@@ -10,6 +10,7 @@ import shutil
 from .repositories import ProjectsRepository, GraphsRepository, NodesRepository, ModelsRepository
 from .metadata import MetadataStore
 from .parser import parse_ursaml, serialize_ursaml
+from app.domain.specifications import Specification, filter_by_specification
 
 
 class UrsaMLStorage:
@@ -119,23 +120,42 @@ class UrsaMLStorage:
     def delete_model(self, model_id: str) -> bool:
         return self._models.delete(model_id)
 
-    # Metrics operations
-    def add_metrics(self, graph_id: str, node_id: str, metrics: Dict[str, Any]):
-        ursaml_data = self.load_graph_ursaml(graph_id)
-        if not ursaml_data or node_id not in ursaml_data['nodes']:
-            return None
-        if 'accuracy' in metrics and 'score' in ursaml_data['nodes'][node_id]['columns']:
-            ursaml_data['nodes'][node_id]['columns']['score'] = metrics['accuracy']
-        if 'meta' not in ursaml_data['nodes'][node_id]['detailed']:
-            ursaml_data['nodes'][node_id]['detailed']['meta'] = {}
-        ursaml_data['nodes'][node_id]['detailed']['meta'].update({
-            'score': metrics.get('accuracy', 0.0),
-            'loss': metrics.get('loss', 0.0),
-            'epochs': metrics.get('epochs', 0),
-            'metrics_timestamp': datetime.now().isoformat()
-        })
-        for key, value in metrics.items():
-            if key not in ['accuracy', 'loss', 'epochs']:
-                ursaml_data['nodes'][node_id]['detailed']['meta'][key] = value
-        self.save_graph_ursaml(graph_id, ursaml_data)
-        return metrics
+    # Health check operations
+    def get_storage_stats(self) -> Dict[str, Any]:
+        """Get statistics about storage for health checks."""
+        metadata = self._metadata.data
+        return {
+            "directories": {
+                "projects": self.projects_path.exists(),
+                "graphs": self.graphs_path.exists(),
+                "models": self.models_path.exists(),
+            },
+            "stats": {
+                "total_projects": len(metadata.get("projects", {})),
+                "total_graphs": len(metadata.get("graphs", {})),
+                "total_models": len(metadata.get("models", {})),
+            },
+        }
+
+    # Specification-based queries
+    def find_projects(self, spec: Specification) -> List[Dict[str, Any]]:
+        """Find projects matching a specification."""
+        all_projects = self.get_all_projects()
+        return filter_by_specification(all_projects, spec)
+    
+    def find_graphs(self, spec: Specification) -> List[Dict[str, Any]]:
+        """Find graphs matching a specification."""
+        # Get all graphs across all projects
+        all_graphs = []
+        for project in self.get_all_projects():
+            all_graphs.extend(self.get_project_graphs(project["id"]))
+        return filter_by_specification(all_graphs, spec)
+    
+    def find_nodes(self, spec: Specification) -> List[Dict[str, Any]]:
+        """Find nodes matching a specification."""
+        # Get all nodes across all graphs
+        all_nodes = []
+        for project in self.get_all_projects():
+            for graph in self.get_project_graphs(project["id"]):
+                all_nodes.extend(self.get_graph_nodes(graph["id"]))
+        return filter_by_specification(all_nodes, spec)
