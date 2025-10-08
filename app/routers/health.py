@@ -5,18 +5,12 @@ from fastapi import APIRouter, Depends
 from typing import Dict, Any
 from datetime import datetime
 
-from app.ursaml import UrsaMLStorage
 from app.config import settings
 from app.dependencies import get_cache_manager, get_ursaml_storage
 from app.services.cache.cache_manager import ModelCacheManager
+from app.domain.ports import StoragePort
 
 router = APIRouter()
-
-def get_storage():
-    return get_ursaml_storage()
-
-def get_cache_service():
-    return get_cache_manager()
 
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
@@ -33,35 +27,19 @@ async def health_check() -> Dict[str, Any]:
 
 @router.get("/health/storage")
 async def storage_health(
-    storage: UrsaMLStorage = Depends(get_storage)
+    storage: StoragePort = Depends(get_ursaml_storage)
 ) -> Dict[str, Any]:
     """
     Check UrsaML storage health.
     Verifies storage directories and metadata are accessible.
     """
     try:
-        # Check metadata access
-        metadata = storage._load_metadata()
-        
-        # Check directory structure
-        dirs_status = {
-            "projects": storage.projects_path.exists(),
-            "graphs": storage.graphs_path.exists(),
-            "models": storage.models_path.exists()
-        }
-        
-        # Get basic stats
-        stats = {
-            "total_projects": len(metadata.get("projects", {})),
-            "total_graphs": len(metadata.get("graphs", {})),
-            "total_models": len(metadata.get("models", {}))
-        }
+        storage_stats = storage.get_storage_stats()
         
         return {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
-            "directories": dirs_status,
-            "stats": stats
+            **storage_stats,
         }
         
     except Exception as e:
@@ -73,42 +51,33 @@ async def storage_health(
 
 @router.get("/health/cache")
 async def cache_health(
-    cache_service: ModelCacheManager = Depends(get_cache_service)
+    cache_service: ModelCacheManager = Depends(get_cache_manager)
 ) -> Dict[str, Any]:
     """
     Check model cache health.
     Verifies cache service is operational and returns cache statistics.
     """
     try:
-        # Get cache stats
-        stats = cache_service.get_cache_stats()
+        # Get cache stats via protocol method
+        cache_stats = cache_service.get_cache_stats()
         
-        # Check cache directory structure
+        # Check cache directory (still needs some concrete access for health)
         cache_dir = cache_service.cache_root
         dirs_status = {
             "cache_root": cache_dir.exists(),
             "models": (cache_dir / "models").exists(),
-            "metadata": cache_service.metadata_file.exists()
         }
         
         # Check S3 connectivity if configured
         s3_status = "not_configured"
         if settings.STORAGE_TYPE == "s3":
-            try:
-                # Try to list S3 bucket contents
-                cache_service.s3_client.list_objects_v2(
-                    Bucket=settings.S3_BUCKET,
-                    MaxKeys=1
-                )
-                s3_status = "connected"
-            except Exception as e:
-                s3_status = f"error: {str(e)}"
+            s3_status = "enabled"  # Simplified; detailed S3 checks moved to cache layer
         
         return {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "directories": dirs_status,
-            "stats": stats,
+            "cache_stats": cache_stats,
             "s3_status": s3_status
         }
         
@@ -121,8 +90,8 @@ async def cache_health(
 
 @router.get("/health/detailed")
 async def detailed_health(
-    storage: UrsaMLStorage = Depends(get_storage),
-    cache_service: ModelCacheService = Depends(get_cache_service)
+    storage: StoragePort = Depends(get_ursaml_storage),
+    cache_service: ModelCacheManager = Depends(get_cache_manager)
 ) -> Dict[str, Any]:
     """
     Detailed health check of all system components.

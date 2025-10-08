@@ -1,47 +1,32 @@
-from fastapi import APIRouter, HTTPException, Path, Depends
+from fastapi import APIRouter, Path, Depends
 from app.schemas.api_schemas import NodeUpdate, NodeResponse, GraphStructure, Node as NodeSchema, Edge
-from app.ursaml import UrsaMLStorage
-from app.dependencies import get_ursaml_storage
-from app.config import settings
+from app.dependencies import get_ursaml_storage, get_graph_access_service
+from app.domain.ports import StoragePort
+from app.application.graph_access_service import GraphAccessService
+from app.domain.errors import NotFoundError, ValidationError
 from typing import List
 
 router = APIRouter()
-
-def get_storage():
-    return get_ursaml_storage()
 
 @router.delete("/projects/{project_id}/graphs/{graph_id}/nodes/{node_id}")
 def delete_node(
     project_id: str,
     graph_id: str,
     node_id: str,
-    storage: UrsaMLStorage = Depends(get_storage)
+    access_svc: GraphAccessService = Depends(get_graph_access_service),
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Delete a node from the knowledge graph.
     """
-    # Validate project exists
-    project = storage.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
-    
     # Validate graph exists and belongs to project
-    graph = storage.get_graph(graph_id)
-    if not graph:
-        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
-    
-    if graph["project_id"] != project_id:
-        raise HTTPException(status_code=400, detail="Graph does not belong to specified project")
+    access_svc.require_graph_in_project(project_id, graph_id)
     
     # Validate node exists
-    node = storage.get_node(graph_id, node_id)
-    if not node:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    access_svc.require_node_exists(graph_id, node_id)
     
     # Delete the node
-    success = storage.delete_node(graph_id, node_id)
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to delete node")
+    storage.delete_node(graph_id, node_id)
     
     return NodeResponse(success=True)
 
@@ -51,24 +36,20 @@ def update_node(
     graph_id: str,
     node_id: str,
     node_data: NodeUpdate,
-    storage: UrsaMLStorage = Depends(get_storage)
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Update node attributes in the knowledge graph.
     """
-    # Validate node exists and belongs to the correct graph
-    node = storage.get_node(graph_id, node_id)
-    if not node:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    # Validate node exists
+    access_svc.require_node_exists(graph_id, node_id)
     
     # Validate metadata is provided
     if not node_data.metadata:
-        raise HTTPException(status_code=400, detail="Metadata is required for node update")
+        raise ValidationError("Metadata is required for node update")
     
     # Update the node
-    updated_node = storage.update_node(graph_id, node_id, node_data.metadata)
-    if not updated_node:
-        raise HTTPException(status_code=500, detail="Failed to update node")
+    storage.update_node(graph_id, node_id, node_data.metadata)
     
     return NodeResponse(success=True)
 
@@ -78,39 +59,26 @@ def replace_node_model(
     graph_id: str,
     node_id: str,
     node_data: NodeUpdate,
-    storage: UrsaMLStorage = Depends(get_storage)
+    access_svc: GraphAccessService = Depends(get_graph_access_service),
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Swap model within node in knowledge graph.
     """
-    # Validate project exists
-    project = storage.get_project(project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail=f"Project not found: {project_id}")
-    
     # Validate graph exists and belongs to project
-    graph = storage.get_graph(graph_id)
-    if not graph:
-        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
-    
-    if graph["project_id"] != project_id:
-        raise HTTPException(status_code=400, detail="Graph does not belong to specified project")
+    access_svc.require_graph_in_project(project_id, graph_id)
     
     # Validate node exists
-    node = storage.get_node(graph_id, node_id)
-    if not node:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+    access_svc.require_node_exists(graph_id, node_id)
     
     # Validate model_id is provided in metadata
     if not node_data.metadata or "model_id" not in node_data.metadata:
-        raise HTTPException(status_code=400, detail="model_id is required in metadata")
+        raise ValidationError("model_id is required in metadata")
     
     model_id = node_data.metadata["model_id"]
     
     # Update node with new model
-    updated_node = storage.update_node(graph_id, node_id, {"model_id": model_id})
-    if not updated_node:
-        raise HTTPException(status_code=500, detail="Failed to update node model")
+    storage.update_node(graph_id, node_id, {"model_id": model_id})
     
     return NodeResponse(success=True)
 
@@ -118,18 +86,14 @@ def replace_node_model(
 def get_nodes(
     project_id: str,
     graph_id: str,
-    storage: UrsaMLStorage = Depends(get_storage)
+    access_svc: GraphAccessService = Depends(get_graph_access_service),
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Retrieve full information of nodes and edges of knowledge graph.
     """
-    # Validate graph exists
-    graph = storage.get_graph(graph_id)
-    if not graph:
-        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
-    
-    if graph["project_id"] != project_id:
-        raise HTTPException(status_code=400, detail="Graph does not belong to specified project")
+    # Validate graph exists and belongs to project
+    access_svc.require_graph_in_project(project_id, graph_id)
     
     # Get nodes and edges for the graph
     nodes = storage.get_graph_nodes(graph_id)
@@ -166,22 +130,18 @@ def create_node(
     project_id: str,
     graph_id: str,
     node_data: dict,
-    storage: UrsaMLStorage = Depends(get_storage)
+    access_svc: GraphAccessService = Depends(get_graph_access_service),
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Create a new node in the knowledge graph.
     """
-    # Validate graph exists
-    graph = storage.get_graph(graph_id)
-    if not graph:
-        raise HTTPException(status_code=404, detail=f"Graph not found: {graph_id}")
-    
-    if graph["project_id"] != project_id:
-        raise HTTPException(status_code=400, detail="Graph does not belong to specified project")
+    # Validate graph exists and belongs to project
+    access_svc.require_graph_in_project(project_id, graph_id)
     
     # Validate required fields
     if "name" not in node_data:
-        raise HTTPException(status_code=400, detail="Node name is required")
+        raise ValidationError("Node name is required")
     
     # Create the node
     node = storage.create_node(
@@ -189,9 +149,6 @@ def create_node(
         name=node_data["name"],
         model_id=node_data.get("model_id")
     )
-    
-    if not node:
-        raise HTTPException(status_code=500, detail="Failed to create node")
     
     return {
         "success": True,
@@ -205,15 +162,15 @@ def get_node_detail(
     project_id: str,
     graph_id: str,
     node_id: str,
-    storage: UrsaMLStorage = Depends(get_storage)
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Get detailed information about a specific node.
     """
-    # Validate node exists and belongs to the correct graph
+    # Validate node exists
     node = storage.get_node(graph_id, node_id)
     if not node:
-        raise HTTPException(status_code=404, detail=f"Node not found: {node_id}")
+        raise NotFoundError(f"Node not found: {node_id}")
     
     return {
         "id": node["id"],

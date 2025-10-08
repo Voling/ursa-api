@@ -1,18 +1,19 @@
-from fastapi import APIRouter, HTTPException, Path, Depends
+from fastapi import APIRouter, Path, Depends
 from app.schemas.api_schemas import MetricsUpload, MetricsResponse, AllNodeMetricsResponse
-from app.ursaml import UrsaMLStorage
-from app.dependencies import get_ursaml_storage
-from typing import Dict, Any, Optional
+from app.dependencies import get_ursaml_storage, get_metrics_service
+from app.domain.ports import StoragePort
+from app.application.metrics_service import MetricsService
+from app.domain.errors import ValidationError
+from typing import Dict, Any
 import json
-from app.config import settings
 
 router = APIRouter()
 
-def get_storage():
-    return get_ursaml_storage()
-
 @router.post("/metrics/", response_model=MetricsResponse)
-def log_metrics(metrics_data: MetricsUpload, storage: UrsaMLStorage = Depends(get_storage)):
+def log_metrics(
+    metrics_data: MetricsUpload,
+    metrics_svc: MetricsService = Depends(get_metrics_service)
+):
     """
     Upload metrics of model
     Stored in UrsaML graph
@@ -20,17 +21,11 @@ def log_metrics(metrics_data: MetricsUpload, storage: UrsaMLStorage = Depends(ge
     # Parse metrics JSON
     try:
         metrics = json.loads(metrics_data.metrics)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON in metrics field")
+    except json.JSONDecodeError as exc:
+        raise ValidationError("Invalid JSON in metrics field") from exc
     
-    # Get node from graph
-    nodes = storage.get_graph_nodes(metrics_data.graph_id)
-    node = next((n for n in nodes if n["id"] == metrics_data.model_id), None)
-    if not node:
-        raise HTTPException(status_code=404, detail=f"Node not found: {metrics_data.model_id}")
-    
-    # Store metrics
-    storage.add_metrics(
+    # Store metrics (service will validate node existence)
+    metrics_svc.add_node_metrics(
         graph_id=metrics_data.graph_id,
         node_id=metrics_data.model_id,
         metrics={
@@ -48,7 +43,7 @@ def get_node_metrics(
     project_id: str,
     graph_id: str,
     node_id: str,
-    storage: UrsaMLStorage = Depends(get_storage)
+    storage: StoragePort = Depends(get_ursaml_storage)
 ) -> Dict[str, Any]:
     """
     Get metrics for a specific node.
@@ -89,7 +84,7 @@ def get_node_metrics(
 def get_all_node_metrics(
     project_id: str,
     graph_id: str,
-    storage: UrsaMLStorage = Depends(get_storage)
+    storage: StoragePort = Depends(get_ursaml_storage)
 ):
     """
     Get metrics for all nodes in a graph.
