@@ -1,0 +1,86 @@
+"""Ports (interface abstractions) for application services to depend on."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Protocol, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.domain.specifications import Specification
+
+
+class StoragePort(Protocol):
+    """Abstract storage interface for graph/project/node operations."""
+
+    # Project operations
+    def create_project(self, name: str, description: str = "") -> Dict[str, Any]: ...
+
+    def get_project(self, project_id: str) -> Optional[Dict[str, Any]]: ...
+
+    def get_all_projects(self) -> List[Dict[str, Any]]: ...
+
+    def update_project(
+        self, project_id: str, name: str, description: str
+    ) -> Optional[Dict[str, Any]]: ...
+
+    def delete_project(self, project_id: str) -> bool: ...
+
+    # Graph operations
+    def create_graph(
+        self, project_id: str, name: str, description: str = ""
+    ) -> Optional[Dict[str, Any]]: ...
+
+    def get_graph(self, graph_id: str) -> Optional[Dict[str, Any]]: ...
+
+    def get_project_graphs(self, project_id: str) -> List[Dict[str, Any]]: ...
+
+    def update_graph(
+        self, graph_id: str, name: str, description: str
+    ) -> Optional[Dict[str, Any]]: ...
+
+    def delete_graph(self, graph_id: str) -> bool: ...
+
+    # Node operations
+    def create_node(
+        self, graph_id: str, name: str, model_id: str | None = None
+    ) -> Optional[Dict[str, Any]]: ...
+
+    def get_node(self, graph_id: str, node_id: str) -> Optional[Dict[str, Any]]: ...
+
+    def get_graph_nodes(self, graph_id: str) -> List[Dict[str, Any]]: ...
+
+    def update_node(
+        self, graph_id: str, node_id: str, metadata: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]: ...
+
+    def delete_node(self, graph_id: str, node_id: str) -> bool: ...
+
+    def get_graph_edges(self, graph_id: str) -> List[Dict[str, Any]]: ...
+
+    # UrsaML format operations
+    def load_graph_ursaml(self, graph_id: str) -> Optional[Dict[str, Any]]: ...
+
+    def save_graph_ursaml(self, graph_id: str, ursaml_data: Dict[str, Any]) -> None: ...
+
+    # Health check operations
+    def get_storage_stats(self) -> Dict[str, Any]: ...
+
+    # Specification-based queries
+    def find_projects(self, spec: Specification) -> List[Dict[str, Any]]: ...
+    
+    def find_graphs(self, spec: Specification) -> List[Dict[str, Any]]: ...
+    
+    def find_nodes(self, spec: Specification) -> List[Dict[str, Any]]: ...
+
+
+class CachePort(Protocol):
+    """Abstract cache interface for model persistence and retrieval."""
+
+    def save_model_from_sdk(self, model_id: str, sdk_dir: Path) -> Path: ...
+
+    def get_model_for_sdk(self, model_id: str, force_refresh: bool = False) -> Path: ...
+
+    def delete_model(self, model_id: str) -> bool: ...
+
+    # Health check operations
+    def get_cache_stats(self) -> Dict[str, Any]: ...
+
